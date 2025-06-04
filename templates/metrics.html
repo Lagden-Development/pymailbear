@@ -1,0 +1,300 @@
+{% extends "layout.html" %}
+
+{% block title %}Metrics & Analytics{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Metrics & Analytics</h1>
+    <div class="actions">
+        <div class="date-range-picker">
+            <button class="date-range-btn {% if range == 'week' %}active{% endif %}" data-range="week">Last 7 Days</button>
+            <button class="date-range-btn {% if range == 'month' %}active{% endif %}" data-range="month">Last 30 Days</button>
+            <button class="date-range-btn {% if range == 'year' %}active{% endif %}" data-range="year">Last Year</button>
+            <button class="date-range-btn" data-range="custom">Custom Range</button>
+        </div>
+        <form id="custom-range-form" class="custom-range-form {% if range != 'custom' %}hidden{% endif %}">
+            <input type="date" name="from" value="{{ from_date }}" class="date-input">
+            <span>to</span>
+            <input type="date" name="to" value="{{ to_date }}" class="date-input">
+            <button type="submit" class="btn btn-secondary btn-sm">Apply</button>
+        </form>
+    </div>
+</div>
+
+<div class="metrics-grid">
+    <!-- Summary stats -->
+    <div class="metrics-card summary">
+        <h2>Summary</h2>
+        <div class="metrics-data">
+            <div class="metric-item">
+                <div class="metric-value">{{ metrics.total_submissions }}</div>
+                <div class="metric-label">Total Submissions</div>
+                <div class="metric-trend">
+                    {% if metrics.submission_trend > 0 %}
+                    <span class="trend-up">↑ {{ metrics.submission_trend }}%</span>
+                    {% elif metrics.submission_trend < 0 %}
+                    <span class="trend-down">↓ {{ metrics.submission_trend|abs }}%</span>
+                    {% else %}
+                    <span class="trend-neutral">–</span>
+                    {% endif %}
+                    <span class="trend-period">vs. previous period</span>
+                </div>
+            </div>
+            
+            <div class="metric-item">
+                <div class="metric-value">{{ metrics.success_rate }}%</div>
+                <div class="metric-label">Success Rate</div>
+                <div class="progress-bar">
+                    <div class="progress" style="width: {{ metrics.success_rate }}%"></div>
+                </div>
+            </div>
+            
+            <div class="metric-item">
+                <div class="metric-value">{{ metrics.avg_per_day }}</div>
+                <div class="metric-label">Avg. Submissions/Day</div>
+            </div>
+            
+            <div class="metric-item">
+                <div class="metric-value">{{ metrics.conversion_rate }}%</div>
+                <div class="metric-label">Conversion Rate</div>
+                <div class="metric-trend">
+                    {% if metrics.conversion_trend > 0 %}
+                    <span class="trend-up">↑ {{ metrics.conversion_trend }}%</span>
+                    {% elif metrics.conversion_trend < 0 %}
+                    <span class="trend-down">↓ {{ metrics.conversion_trend|abs }}%</span>
+                    {% else %}
+                    <span class="trend-neutral">–</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Timeline chart -->
+    <div class="metrics-card timeline">
+        <h2>Submissions Over Time</h2>
+        <div class="chart-container" id="timeline-chart">
+            <canvas id="submissionsChart"></canvas>
+        </div>
+    </div>
+
+    <!-- Form performance -->
+    <div class="metrics-card form-performance">
+        <h2>Form Performance</h2>
+        <table class="performance-table">
+            <thead>
+                <tr>
+                    <th>Form</th>
+                    <th>Submissions</th>
+                    <th>Success Rate</th>
+                    <th>Conversion</th>
+                    <th>Trend</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for form in metrics.forms %}
+                <tr>
+                    <td>{{ form.name }}</td>
+                    <td>{{ form.submissions }}</td>
+                    <td>
+                        <div class="mini-progress">
+                            <div class="mini-progress-bar" style="width: {{ form.success_rate }}%"></div>
+                            <span>{{ form.success_rate }}%</span>
+                        </div>
+                    </td>
+                    <td>{{ form.conversion_rate }}%</td>
+                    <td>
+                        {% if form.trend > 0 %}
+                        <span class="trend-up">↑ {{ form.trend }}%</span>
+                        {% elif form.trend < 0 %}
+                        <span class="trend-down">↓ {{ form.trend|abs }}%</span>
+                        {% else %}
+                        <span class="trend-neutral">–</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Traffic sources -->
+    <div class="metrics-card traffic-sources">
+        <h2>Traffic Sources</h2>
+        <div class="chart-container" id="sources-chart">
+            <canvas id="sourcesChart"></canvas>
+        </div>
+    </div>
+
+    <!-- Device distribution -->
+    <div class="metrics-card devices">
+        <h2>Device Distribution</h2>
+        <div class="chart-container" id="devices-chart">
+            <canvas id="devicesChart"></canvas>
+        </div>
+    </div>
+
+    <!-- Error breakdown -->
+    <div class="metrics-card errors">
+        <h2>Error Breakdown</h2>
+        <div class="chart-container" id="errors-chart">
+            <canvas id="errorsChart"></canvas>
+        </div>
+        <div class="error-list">
+            {% for error in metrics.top_errors %}
+            <div class="error-item">
+                <div class="error-name">{{ error.message }}</div>
+                <div class="error-count">{{ error.count }} occurrences</div>
+                <div class="mini-progress">
+                    <div class="mini-progress-bar error" style="width: {{ error.percentage }}%"></div>
+                    <span>{{ error.percentage }}%</span>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@3.7.1/dist/chart.min.js"></script>
+<script>
+    // Submissions over time chart
+    const timelineCtx = document.getElementById('submissionsChart').getContext('2d');
+    const timelineChart = new Chart(timelineCtx, {
+        type: 'line',
+        data: {
+            labels: {{ metrics.timeline.labels|tojson }},
+            datasets: [
+                {
+                    label: 'Submissions',
+                    data: {{ metrics.timeline.data|tojson }},
+                    borderColor: '#0066cc',
+                    backgroundColor: 'rgba(0, 102, 204, 0.1)',
+                    tension: 0.3,
+                    fill: true
+                },
+                {
+                    label: 'Successful',
+                    data: {{ metrics.timeline.success_data|tojson }},
+                    borderColor: '#28a745',
+                    backgroundColor: 'rgba(40, 167, 69, 0.1)',
+                    tension: 0.3,
+                    fill: true
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        precision: 0
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    position: 'top',
+                }
+            }
+        }
+    });
+    
+    // Traffic sources chart
+    const sourcesCtx = document.getElementById('sourcesChart').getContext('2d');
+    const sourcesChart = new Chart(sourcesCtx, {
+        type: 'doughnut',
+        data: {
+            labels: {{ metrics.sources.labels|tojson }},
+            datasets: [{
+                data: {{ metrics.sources.data|tojson }},
+                backgroundColor: [
+                    '#0066cc', '#4d94ff', '#80b3ff', '#b3d1ff', '#e6f0ff'
+                ],
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'right',
+                }
+            }
+        }
+    });
+    
+    // Devices chart
+    const devicesCtx = document.getElementById('devicesChart').getContext('2d');
+    const devicesChart = new Chart(devicesCtx, {
+        type: 'pie',
+        data: {
+            labels: {{ metrics.devices.labels|tojson }},
+            datasets: [{
+                data: {{ metrics.devices.data|tojson }},
+                backgroundColor: [
+                    '#28a745', '#17a2b8', '#ffc107'
+                ],
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'right',
+                }
+            }
+        }
+    });
+    
+    // Errors chart
+    const errorsCtx = document.getElementById('errorsChart').getContext('2d');
+    const errorsChart = new Chart(errorsCtx, {
+        type: 'bar',
+        data: {
+            labels: {{ metrics.errors.labels|tojson }},
+            datasets: [{
+                label: 'Error Count',
+                data: {{ metrics.errors.data|tojson }},
+                backgroundColor: '#dc3545',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        precision: 0
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    display: false
+                }
+            }
+        }
+    });
+    
+    // Date range picker
+    document.querySelectorAll('.date-range-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const range = btn.dataset.range;
+            if (range === 'custom') {
+                document.getElementById('custom-range-form').classList.remove('hidden');
+            } else {
+                window.location.href = `/metrics?range=${range}`;
+            }
+        });
+    });
+</script>
+{% endblock %}
+{% endblock %}

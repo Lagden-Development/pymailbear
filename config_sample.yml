@@ -1,0 +1,57 @@
+# MailBear Configuration
+# Database-only mode - all forms are managed through the web dashboard
+
+# Server settings
+port: 1234
+metrics_port: 9090
+log_level: "INFO"
+debug: false
+
+# Security settings
+security:
+  dashboard_password: "change_this_to_a_secure_random_string"
+  jwt_secret: "change_this_to_a_secure_random_string"
+  jwt_algorithm: "HS256"
+  access_token_expire_minutes: 1440  # 24 hours
+  rate_limit: 5  # requests per minute
+  cors_allow_origins: ["*"]
+
+# Database Configuration (Required)
+database:
+  host: localhost
+  port: 3306
+  username: mailbear
+  password: password
+  dbname: mailbear
+  echo: false  # SQL query logging
+
+# SMTP Configuration
+smtp:
+  host: smtp.example.com
+  port: 587
+  username: your_username
+  password: your_password
+  from_email: forms@example.com
+  # Email encryption options
+  use_tls: null  # Set to true for SSL/TLS or null to auto-detect based on port
+  start_tls: null  # Set to true for STARTTLS or null to auto-detect based on port
+  verify_cert: true  # Set to false to disable SSL certificate verification (not recommended)
+  ssl_context: null  # Advanced SSL context settings
+  timeout: 60  # Connection timeout in seconds
+
+# Note: MailBear now operates in database-only mode. All forms are created and managed
+# through the web dashboard at http://localhost:1234/forms
+# 
+# Features available in database mode:
+# - Multiple email recipients per form
+# - Multi-step forms
+# - Advanced form validation
+# - Comprehensive analytics
+# - Form templates
+# - API key management
+#
+# To get started:
+# 1. Set up your database configuration above
+# 2. Run: python init_db.py
+# 3. Create an admin user: python create_admin.py
+# 4. Access the dashboard at http://localhost:1234

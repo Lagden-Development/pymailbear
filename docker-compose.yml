@@ -1,0 +1,38 @@
+version: '3'
+
+services:
+  mailbear:
+    build: .
+    ports:
+      - "1234:1234"
+      - "9090:9090"
+    volumes:
+      - ./config.yml:/app/config.yml
+      - ./data:/app/data
+    environment:
+      - DB_HOST=mariadb
+      - DB_PORT=3306
+      - DB_USER=mailbear
+      - DB_PASS=mailbear_password
+      - DB_NAME=mailbear
+      - USE_DB=true
+      - JWT_SECRET=change_this_in_production
+    depends_on:
+      - mariadb
+    restart: unless-stopped
+
+  mariadb:
+    image: mariadb:10.6
+    ports:
+      - "3306:3306"
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    environment:
+      - MYSQL_ROOT_PASSWORD=root_password
+      - MYSQL_DATABASE=mailbear
+      - MYSQL_USER=mailbear
+      - MYSQL_PASSWORD=mailbear_password
+    restart: unless-stopped
+
+volumes:
+  mariadb_data:

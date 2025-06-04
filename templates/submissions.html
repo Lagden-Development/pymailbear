@@ -1,0 +1,191 @@
+{% extends "layout.html" %}
+
+{% block title %}All Submissions{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>All Submissions</h1>
+    <div class="actions">
+        <a href="/" class="btn btn-secondary">Back to Dashboard</a>
+        <a href="/forms" class="btn btn-secondary">View Forms</a>
+    </div>
+</div>
+
+<div class="submissions-toolbar">
+    <div class="filters">
+        <form class="filter-form" method="GET" action="/submissions">
+            <div class="filter-group">
+                <label for="form_id">Form</label>
+                <select id="form_id" name="form_id">
+                    <option value="">All Forms</option>
+                    {% for form_id, form in forms.items() %}
+                        <option value="{{ form_id }}" {% if request.query_params.get('form_id') == form_id %}selected{% endif %}>{{ form.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+            <div class="filter-group">
+                <label for="status">Status</label>
+                <select id="status" name="status">
+                    <option value="">All</option>
+                    <option value="success" {% if request.query_params.get('status') == 'success' %}selected{% endif %}>Success</option>
+                    <option value="error" {% if request.query_params.get('status') == 'error' %}selected{% endif %}>Error</option>
+                </select>
+            </div>
+            
+            <div class="filter-group">
+                <label for="from_date">From</label>
+                <input type="date" id="from_date" name="from_date" value="{{ request.query_params.get('from_date', '') }}">
+            </div>
+            
+            <div class="filter-group">
+                <label for="to_date">To</label>
+                <input type="date" id="to_date" name="to_date" value="{{ request.query_params.get('to_date', '') }}">
+            </div>
+            
+            <button type="submit" class="btn btn-secondary">Filter</button>
+            {% if request.query_params %}
+                <a href="/submissions" class="btn btn-light">Reset</a>
+            {% endif %}
+        </form>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Submissions ({{ total_count }})</h2>
+    
+    {% if submissions %}
+        <div class="submissions-list">
+            {% for submission in submissions %}
+                <div class="submission-card {% if submission.success %}submission-success{% else %}submission-error{% endif %}">
+                    <div class="submission-header">
+                        <div class="submission-info">
+                            <div class="submission-form">
+                                {% if submission.form_id in forms %}
+                                    <a href="/forms/submissions/{{ submission.form_id }}">{{ forms[submission.form_id].name }}</a>
+                                {% else %}
+                                    {{ submission.form_id }}
+                                {% endif %}
+                            </div>
+                            <div class="submission-date">{{ submission.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</div>
+                        </div>
+                        <div class="submission-status">
+                            {% if submission.success %}
+                                <span class="badge success">Success</span>
+                            {% else %}
+                                <span class="badge danger">Error</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    
+                    <div class="submission-body">
+                        <table class="submission-data">
+                            {% for field, value in submission.data.items() %}
+                                <tr>
+                                    <th>{{ field }}</th>
+                                    <td>{{ value }}</td>
+                                </tr>
+                            {% endfor %}
+                        </table>
+                    </div>
+                    
+                    {% if not submission.success and submission.error %}
+                        <div class="submission-error-message">
+                            Error: {{ submission.error }}
+                        </div>
+                    {% endif %}
+                </div>
+            {% endfor %}
+        </div>
+        
+        {% if total_pages > 1 %}
+            <div class="pagination">
+                {% if page > 1 %}
+                    <a href="/submissions?page={{ page - 1 }}{% for key, value in request.query_params.items() %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}" class="pagination-item">&laquo; Previous</a>
+                {% endif %}
+                
+                {% set start_page = max(1, page - 2) %}
+                {% set end_page = min(total_pages, page + 2) %}
+                
+                {% if start_page > 1 %}
+                    <a href="/submissions?page=1{% for key, value in request.query_params.items() %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}" class="pagination-item">1</a>
+                    {% if start_page > 2 %}
+                        <span class="pagination-item pagination-ellipsis">...</span>
+                    {% endif %}
+                {% endif %}
+                
+                {% for i in range(start_page, end_page + 1) %}
+                    <a href="/submissions?page={{ i }}{% for key, value in request.query_params.items() %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}" class="pagination-item {% if i == page %}active{% endif %}">{{ i }}</a>
+                {% endfor %}
+                
+                {% if end_page < total_pages %}
+                    {% if end_page < total_pages - 1 %}
+                        <span class="pagination-item pagination-ellipsis">...</span>
+                    {% endif %}
+                    <a href="/submissions?page={{ total_pages }}{% for key, value in request.query_params.items() %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}" class="pagination-item">{{ total_pages }}</a>
+                {% endif %}
+                
+                {% if page < total_pages %}
+                    <a href="/submissions?page={{ page + 1 }}{% for key, value in request.query_params.items() %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}" class="pagination-item">Next &raquo;</a>
+                {% endif %}
+            </div>
+        {% endif %}
+    {% else %}
+        <div class="empty-state">
+            <p>No submissions found.</p>
+        </div>
+    {% endif %}
+</div>
+
+<style>
+.submission-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.submission-form {
+    font-weight: 600;
+}
+
+.submission-form a {
+    color: inherit;
+    text-decoration: none;
+}
+
+.submission-form a:hover {
+    text-decoration: underline;
+}
+
+.pagination {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: center;
+    margin-top: 2rem;
+}
+
+.pagination-item {
+    padding: 0.5rem 0.75rem;
+    text-decoration: none;
+    color: var(--text-color);
+    background: var(--gray-100);
+    border-radius: 0.25rem;
+    transition: background 0.2s;
+}
+
+.pagination-item:hover {
+    background: var(--gray-200);
+}
+
+.pagination-item.active {
+    background: var(--primary-color);
+    color: white;
+}
+
+.pagination-ellipsis {
+    padding: 0.5rem 0.75rem;
+    color: var(--gray-500);
+    background: transparent;
+}
+</style>
+{% endblock %}

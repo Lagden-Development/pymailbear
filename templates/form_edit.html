@@ -1,0 +1,274 @@
+{% extends "layout.html" %}
+
+{% block title %}{{ 'Edit Form' if form else 'Create Form' }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>{{ 'Edit Form' if form else 'Create Form' }}</h1>
+    <div class="actions">
+        <a href="/forms" class="btn btn-secondary">Back to Forms</a>
+    </div>
+</div>
+
+<div class="card">
+    <form method="POST" action="{{ '/forms/edit/' + form.id if form else '/forms/create' }}" class="form-grid">
+        <div class="form-group">
+            <label for="name">Form Name *</label>
+            <input type="text" id="name" name="name" value="{{ form.name if form else '' }}" required placeholder="Contact Form">
+            <small>A descriptive name for your form</small>
+        </div>
+        
+        <div class="form-group">
+            <label for="description">Description</label>
+            <textarea id="description" name="description" rows="2" placeholder="Contact form for the homepage">{{ form.description if form else '' }}</textarea>
+            <small>Optional description for your reference</small>
+        </div>
+        
+        <div class="form-group">
+            <label for="to_emails">To Emails *</label>
+            <textarea id="to_emails" name="to_emails" rows="3" required placeholder="contact@example.com&#10;sales@example.com&#10;admin@example.com">{{ form.to_emails if form else '' }}</textarea>
+            <small>Email addresses where form submissions will be sent (one per line or comma-separated)</small>
+        </div>
+        
+        <div class="form-group">
+            <label for="from_email">From Email *</label>
+            <input type="email" id="from_email" name="from_email" value="{{ form.from_email if form else config.smtp.from_email }}" required placeholder="forms@example.com">
+            <small>Email address shown as the sender</small>
+        </div>
+        
+        <div class="form-group">
+            <label for="subject">Email Subject *</label>
+            <input type="text" id="subject" name="subject" value="{{ form.subject if form else 'New Form Submission' }}" required placeholder="New Contact Form Submission">
+            <small>Subject line for the email</small>
+        </div>
+        
+        <div class="form-group span-2">
+            <label for="allowed_domains">Allowed Domains</label>
+            <textarea id="allowed_domains" name="allowed_domains" rows="2" placeholder="example.com&#10;*.example.org&#10;*">{{ '\n'.join(form.domains|map(attribute='domain')) if form and form.domains else '*' }}</textarea>
+            <small>One domain per line. Use * for wildcard (e.g., *.example.com) or just * to allow all domains.</small>
+        </div>
+        
+        <div class="form-group">
+            <label for="success_message">Success Message</label>
+            <textarea id="success_message" name="success_message" rows="2" placeholder="Thank you for your submission!">{{ form.success_message if form else 'Thank you for your submission!' }}</textarea>
+            <small>Message shown after successful submission</small>
+        </div>
+        
+        <div class="form-group">
+            <label for="redirect_url">Redirect URL</label>
+            <input type="url" id="redirect_url" name="redirect_url" value="{{ form.redirect_url if form else '' }}" placeholder="https://example.com/thank-you">
+            <small>Optional URL to redirect to after submission</small>
+        </div>
+        
+        <div class="form-group checkbox-group">
+            <div class="checkbox-wrapper">
+                <input type="checkbox" id="honeypot_enabled" name="honeypot_enabled" {% if form and form.honeypot_enabled %}checked{% elif not form %}checked{% endif %}>
+                <label for="honeypot_enabled">Enable Honeypot Protection</label>
+            </div>
+            <small>Helps prevent spam submissions by adding an invisible field</small>
+        </div>
+        
+        <div class="form-group">
+            <label for="honeypot_field">Honeypot Field Name</label>
+            <input type="text" id="honeypot_field" name="honeypot_field" value="{{ form.honeypot_field if form else '_honeypot' }}" placeholder="_honeypot">
+            <small>Name of the honeypot field (hidden from users)</small>
+        </div>
+        
+        <div class="form-group checkbox-group">
+            <div class="checkbox-wrapper">
+                <input type="checkbox" id="multi_step_enabled" name="multi_step_enabled" {% if form and form.multi_step_enabled %}checked{% endif %}>
+                <label for="multi_step_enabled">Enable Multi-Step Form</label>
+            </div>
+            <small>Divide your form into multiple steps for better user experience</small>
+        </div>
+        
+        <div class="form-group" id="progress_indicator_container" {% if not form or not form.multi_step_enabled %}style="display: none"{% endif %}>
+            <label for="progress_indicator_type">Progress Indicator Type</label>
+            <select id="progress_indicator_type" name="progress_indicator_type">
+                <option value="steps" {% if form and form.progress_indicator_type == 'steps' %}selected{% endif %}>Steps with Numbers</option>
+                <option value="progress-bar" {% if form and form.progress_indicator_type == 'progress-bar' %}selected{% endif %}>Progress Bar</option>
+                <option value="dots" {% if form and form.progress_indicator_type == 'dots' %}selected{% endif %}>Dots</option>
+            </select>
+            <small>How to display progress through multi-step form</small>
+        </div>
+        
+        <div class="form-actions span-2">
+            <button type="submit" class="btn btn-primary">{{ 'Update Form' if form else 'Create Form' }}</button>
+            {% if form %}
+            <a href="/forms/delete/{{ form.id }}" class="btn btn-danger" onclick="return confirm('Are you sure you want to delete this form? This action cannot be undone.')">Delete Form</a>
+            {% if form.multi_step_enabled %}
+            <a href="/forms/steps/{{ form.id }}" class="btn btn-info">Configure Multi-Step Form</a>
+            {% endif %}
+            {% endif %}
+        </div>
+    </form>
+</div>
+
+{% if form %}
+<div class="card">
+    <h2>Integration Code</h2>
+    <p>Use the following code to integrate this form on your website:</p>
+    
+    <div class="code-tabs">
+        <div class="tab-buttons">
+            <button class="tab-btn active" onclick="showTab(this, 'html-code')">HTML</button>
+            <button class="tab-btn" onclick="showTab(this, 'js-code')">JavaScript</button>
+            <button class="tab-btn" onclick="showTab(this, 'react-code')">React</button>
+        </div>
+        
+        <div id="html-code" class="tab-content active">
+            <pre><code>&lt;!-- 1. Add data-mailbear attribute to your form --&gt;
+&lt;form data-mailbear="{{ form.id }}"&gt;
+    &lt;input type="text" name="name" placeholder="Name" required&gt;
+    &lt;input type="email" name="email" placeholder="Email" required&gt;
+    &lt;textarea name="message" placeholder="Message" required&gt;&lt;/textarea&gt;
+    &lt;button type="submit"&gt;Send&lt;/button&gt;
+&lt;/form&gt;
+
+&lt;!-- 2. Include our script --&gt;
+&lt;script src="{{ request.base_url }}api/v1/form/{{ form.id }}/js" async&gt;&lt;/script&gt;</code></pre>
+        </div>
+        
+        <div id="js-code" class="tab-content">
+            <pre><code>// If you prefer to handle the form manually
+const form = document.querySelector('form');
+form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const formData = new FormData(form);
+    
+    try {
+        const response = await fetch('{{ request.base_url }}api/v1/form/{{ form.id }}', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const result = await response.json();
+        if (result.status === 'success') {
+            alert(result.message);
+            form.reset();
+        } else {
+            alert('Error: ' + result.message);
+        }
+    } catch (error) {
+        alert('Submission failed: ' + error.message);
+    }
+});</code></pre>
+        </div>
+        
+        <div id="react-code" class="tab-content">
+            <pre><code>import { useState } from 'react';
+
+function ContactForm() {
+    const [formData, setFormData] = useState({
+        name: '',
+        email: '',
+        message: ''
+    });
+    const [status, setStatus] = useState(null);
+    
+    const handleChange = (e) => {
+        setFormData({
+            ...formData,
+            [e.target.name]: e.target.value
+        });
+    };
+    
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        setStatus('submitting');
+        
+        try {
+            const form = new FormData();
+            for (const key in formData) {
+                form.append(key, formData[key]);
+            }
+            
+            const response = await fetch('{{ request.base_url }}api/v1/form/{{ form.id }}', {
+                method: 'POST',
+                body: form
+            });
+            
+            const result = await response.json();
+            if (result.status === 'success') {
+                setStatus('success');
+                setFormData({ name: '', email: '', message: '' });
+            } else {
+                setStatus('error');
+                console.error(result.message);
+            }
+        } catch (error) {
+            setStatus('error');
+            console.error(error);
+        }
+    };
+    
+    return (
+        &lt;div&gt;
+            {status === 'success' && (
+                &lt;div className="success-message"&gt;Thank you! Your message has been sent.&lt;/div&gt;
+            )}
+            
+            {status === 'error' && (
+                &lt;div className="error-message"&gt;There was an error sending your message.&lt;/div&gt;
+            )}
+            
+            &lt;form onSubmit={handleSubmit}&gt;
+                &lt;div&gt;
+                    &lt;label htmlFor="name"&gt;Name&lt;/label&gt;
+                    &lt;input
+                        id="name"
+                        type="text"
+                        name="name"
+                        value={formData.name}
+                        onChange={handleChange}
+                        required
+                    /&gt;
+                &lt;/div&gt;
+                
+                &lt;div&gt;
+                    &lt;label htmlFor="email"&gt;Email&lt;/label&gt;
+                    &lt;input
+                        id="email"
+                        type="email"
+                        name="email"
+                        value={formData.email}
+                        onChange={handleChange}
+                        required
+                    /&gt;
+                &lt;/div&gt;
+                
+                &lt;div&gt;
+                    &lt;label htmlFor="message"&gt;Message&lt;/label&gt;
+                    &lt;textarea
+                        id="message"
+                        name="message"
+                        value={formData.message}
+                        onChange={handleChange}
+                        required
+                    /&gt;
+                &lt;/div&gt;
+                
+                &lt;button type="submit" disabled={status === 'submitting'}&gt;
+                    {status === 'submitting' ? 'Sending...' : 'Send Message'}
+                &lt;/button&gt;
+            &lt;/form&gt;
+        &lt;/div&gt;
+    );
+}
+
+export default ContactForm;</code></pre>
+        </div>
+    </div>
+    
+    <h3>Form URL</h3>
+    <div class="endpoint-url">
+        <code>{{ request.base_url }}api/v1/form/{{ form.id }}</code>
+    </div>
+    
+    <h3>JavaScript URL</h3>
+    <div class="endpoint-url">
+        <code>{{ request.base_url }}api/v1/form/{{ form.id }}/js</code>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,439 @@
+{% extends "layout.html" %}
+
+{% block title %}Configure Multi-Step Form{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Configure Multi-Step Form: {{ form.name }}</h1>
+    <div class="actions">
+        <a href="/forms/edit/{{ form.id }}" class="btn btn-secondary">Back to Form</a>
+    </div>
+</div>
+
+<div class="card">
+    <form method="POST" action="/forms/steps/{{ form.id }}" class="form-grid">
+        <div class="form-group span-2">
+            <div class="steps-container">
+                <div class="steps-header">
+                    <h3>Form Steps</h3>
+                    <button type="button" id="add-step-btn" class="btn btn-primary btn-sm">Add Step</button>
+                </div>
+                
+                <div id="steps-list">
+                    {% if form.steps %}
+                        {% for step in form.steps %}
+                        <div class="step-item" data-step-id="{{ step.id }}">
+                            <div class="step-header">
+                                <div class="step-title">{{ step.title }}</div>
+                                <div class="step-actions">
+                                    <button type="button" class="btn btn-sm edit-step-btn">Edit</button>
+                                    <button type="button" class="btn btn-danger btn-sm delete-step-btn">Delete</button>
+                                </div>
+                            </div>
+                            <div class="step-content" style="display: none;">
+                                <div class="form-group">
+                                    <label for="step-title-{{ step.id }}">Step Title</label>
+                                    <input type="text" id="step-title-{{ step.id }}" name="steps[{{ step.id }}][title]" value="{{ step.title }}" required>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label for="step-description-{{ step.id }}">Description</label>
+                                    <textarea id="step-description-{{ step.id }}" name="steps[{{ step.id }}][description]" rows="2">{{ step.description }}</textarea>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label for="step-order-{{ step.id }}">Order</label>
+                                    <input type="number" id="step-order-{{ step.id }}" name="steps[{{ step.id }}][step_order]" value="{{ step.step_order }}" min="1" required>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label for="step-fields-{{ step.id }}">Fields</label>
+                                    <textarea id="step-fields-{{ step.id }}" name="steps[{{ step.id }}][fields]" rows="3" placeholder="name,email,phone">{{ step.fields|join(',') if step.fields else '' }}</textarea>
+                                    <small>Comma-separated list of field names to include in this step</small>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label for="step-required-{{ step.id }}">Required Fields</label>
+                                    <textarea id="step-required-{{ step.id }}" name="steps[{{ step.id }}][required_fields]" rows="2" placeholder="name,email">{{ step.required_fields|join(',') if step.required_fields else '' }}</textarea>
+                                    <small>Comma-separated list of fields that must be filled to proceed</small>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label for="step-next-text-{{ step.id }}">Next Button Text</label>
+                                    <input type="text" id="step-next-text-{{ step.id }}" name="steps[{{ step.id }}][next_button_text]" value="{{ step.next_button_text }}">
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label for="step-prev-text-{{ step.id }}">Previous Button Text</label>
+                                    <input type="text" id="step-prev-text-{{ step.id }}" name="steps[{{ step.id }}][previous_button_text]" value="{{ step.previous_button_text }}">
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="empty-steps">No steps configured yet. Add your first step to get started.</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        
+        <div class="form-group span-2">
+            <h3>Conditional Logic</h3>
+            <div id="conditions-container">
+                {% if form.step_conditions %}
+                    {% for condition in form.step_conditions %}
+                    <div class="condition-item">
+                        <div class="condition-fields">
+                            <div class="form-group">
+                                <label for="condition-step-{{ condition.id }}">If in Step</label>
+                                <select id="condition-step-{{ condition.id }}" name="conditions[{{ condition.id }}][step_id]" required>
+                                    {% for step in form.steps %}
+                                    <option value="{{ step.id }}" {% if condition.step_id == step.id %}selected{% endif %}>{{ step.title }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="condition-field-{{ condition.id }}">Field Name</label>
+                                <input type="text" id="condition-field-{{ condition.id }}" name="conditions[{{ condition.id }}][field_name]" value="{{ condition.field_name }}" required>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="condition-operator-{{ condition.id }}">Operator</label>
+                                <select id="condition-operator-{{ condition.id }}" name="conditions[{{ condition.id }}][operator]" required>
+                                    <option value="equals" {% if condition.operator == 'equals' %}selected{% endif %}>Equals</option>
+                                    <option value="not_equals" {% if condition.operator == 'not_equals' %}selected{% endif %}>Not Equals</option>
+                                    <option value="contains" {% if condition.operator == 'contains' %}selected{% endif %}>Contains</option>
+                                    <option value="not_contains" {% if condition.operator == 'not_contains' %}selected{% endif %}>Not Contains</option>
+                                    <option value="greater_than" {% if condition.operator == 'greater_than' %}selected{% endif %}>Greater Than</option>
+                                    <option value="less_than" {% if condition.operator == 'less_than' %}selected{% endif %}>Less Than</option>
+                                </select>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="condition-value-{{ condition.id }}">Value</label>
+                                <input type="text" id="condition-value-{{ condition.id }}" name="conditions[{{ condition.id }}][value]" value="{{ condition.value }}" required>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="condition-next-step-{{ condition.id }}">Go to Step</label>
+                                <select id="condition-next-step-{{ condition.id }}" name="conditions[{{ condition.id }}][next_step_order]" required>
+                                    {% for step in form.steps %}
+                                    <option value="{{ step.step_order }}" {% if condition.next_step_order == step.step_order %}selected{% endif %}>{{ step.title }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div class="condition-actions">
+                            <button type="button" class="btn btn-danger btn-sm delete-condition-btn">Delete</button>
+                        </div>
+                    </div>
+                    {% endfor %}
+                {% endif %}
+                
+                <button type="button" id="add-condition-btn" class="btn btn-secondary btn-sm">Add Condition</button>
+            </div>
+        </div>
+        
+        <div class="form-actions span-2">
+            <button type="submit" class="btn btn-primary">Save Multi-Step Configuration</button>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Edit step functionality
+        document.querySelectorAll('.edit-step-btn').forEach(button => {
+            button.addEventListener('click', function() {
+                const stepItem = this.closest('.step-item');
+                const stepContent = stepItem.querySelector('.step-content');
+                
+                if (stepContent.style.display === 'none') {
+                    stepContent.style.display = 'block';
+                    this.textContent = 'Close';
+                } else {
+                    stepContent.style.display = 'none';
+                    this.textContent = 'Edit';
+                }
+            });
+        });
+        
+        // Delete step functionality
+        document.querySelectorAll('.delete-step-btn').forEach(button => {
+            button.addEventListener('click', function() {
+                if (confirm('Are you sure you want to delete this step? This cannot be undone.')) {
+                    const stepItem = this.closest('.step-item');
+                    stepItem.remove();
+                }
+            });
+        });
+        
+        // Add step functionality
+        document.getElementById('add-step-btn').addEventListener('click', function() {
+            const stepsList = document.getElementById('steps-list');
+            const stepId = 'new-' + Date.now();
+            const stepOrder = document.querySelectorAll('.step-item').length + 1;
+            
+            const stepItem = document.createElement('div');
+            stepItem.className = 'step-item';
+            stepItem.dataset.stepId = stepId;
+            
+            stepItem.innerHTML = `
+                <div class="step-header">
+                    <div class="step-title">New Step</div>
+                    <div class="step-actions">
+                        <button type="button" class="btn btn-sm edit-step-btn">Edit</button>
+                        <button type="button" class="btn btn-danger btn-sm delete-step-btn">Delete</button>
+                    </div>
+                </div>
+                <div class="step-content" style="display: block;">
+                    <div class="form-group">
+                        <label for="step-title-${stepId}">Step Title</label>
+                        <input type="text" id="step-title-${stepId}" name="steps[${stepId}][title]" value="New Step" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="step-description-${stepId}">Description</label>
+                        <textarea id="step-description-${stepId}" name="steps[${stepId}][description]" rows="2"></textarea>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="step-order-${stepId}">Order</label>
+                        <input type="number" id="step-order-${stepId}" name="steps[${stepId}][step_order]" value="${stepOrder}" min="1" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="step-fields-${stepId}">Fields</label>
+                        <textarea id="step-fields-${stepId}" name="steps[${stepId}][fields]" rows="3" placeholder="name,email,phone"></textarea>
+                        <small>Comma-separated list of field names to include in this step</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="step-required-${stepId}">Required Fields</label>
+                        <textarea id="step-required-${stepId}" name="steps[${stepId}][required_fields]" rows="2" placeholder="name,email"></textarea>
+                        <small>Comma-separated list of fields that must be filled to proceed</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="step-next-text-${stepId}">Next Button Text</label>
+                        <input type="text" id="step-next-text-${stepId}" name="steps[${stepId}][next_button_text]" value="Next">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="step-prev-text-${stepId}">Previous Button Text</label>
+                        <input type="text" id="step-prev-text-${stepId}" name="steps[${stepId}][previous_button_text]" value="Previous">
+                    </div>
+                </div>
+            `;
+            
+            // Remove empty message if present
+            const emptyMsg = document.querySelector('.empty-steps');
+            if (emptyMsg) {
+                emptyMsg.remove();
+            }
+            
+            // Add the new step to the list
+            stepsList.appendChild(stepItem);
+            
+            // Add event listeners to new buttons
+            const editBtn = stepItem.querySelector('.edit-step-btn');
+            editBtn.addEventListener('click', function() {
+                const content = this.closest('.step-item').querySelector('.step-content');
+                if (content.style.display === 'none') {
+                    content.style.display = 'block';
+                    this.textContent = 'Close';
+                } else {
+                    content.style.display = 'none';
+                    this.textContent = 'Edit';
+                }
+            });
+            
+            const deleteBtn = stepItem.querySelector('.delete-step-btn');
+            deleteBtn.addEventListener('click', function() {
+                if (confirm('Are you sure you want to delete this step? This cannot be undone.')) {
+                    this.closest('.step-item').remove();
+                }
+            });
+        });
+        
+        // Delete condition functionality
+        document.querySelectorAll('.delete-condition-btn').forEach(button => {
+            button.addEventListener('click', function() {
+                if (confirm('Are you sure you want to delete this condition? This cannot be undone.')) {
+                    const conditionItem = this.closest('.condition-item');
+                    conditionItem.remove();
+                }
+            });
+        });
+        
+        // Add condition functionality
+        document.getElementById('add-condition-btn').addEventListener('click', function() {
+            const conditionsContainer = document.getElementById('conditions-container');
+            const conditionId = 'new-' + Date.now();
+            
+            // Get step options
+            let stepOptions = '';
+            document.querySelectorAll('.step-item').forEach(step => {
+                const stepId = step.dataset.stepId;
+                const stepTitle = step.querySelector('.step-title').textContent || 'Step';
+                stepOptions += `<option value="${stepId}">${stepTitle}</option>`;
+            });
+            
+            const conditionItem = document.createElement('div');
+            conditionItem.className = 'condition-item';
+            
+            conditionItem.innerHTML = `
+                <div class="condition-fields">
+                    <div class="form-group">
+                        <label for="condition-step-${conditionId}">If in Step</label>
+                        <select id="condition-step-${conditionId}" name="conditions[${conditionId}][step_id]" required>
+                            ${stepOptions}
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="condition-field-${conditionId}">Field Name</label>
+                        <input type="text" id="condition-field-${conditionId}" name="conditions[${conditionId}][field_name]" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="condition-operator-${conditionId}">Operator</label>
+                        <select id="condition-operator-${conditionId}" name="conditions[${conditionId}][operator]" required>
+                            <option value="equals">Equals</option>
+                            <option value="not_equals">Not Equals</option>
+                            <option value="contains">Contains</option>
+                            <option value="not_contains">Not Contains</option>
+                            <option value="greater_than">Greater Than</option>
+                            <option value="less_than">Less Than</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="condition-value-${conditionId}">Value</label>
+                        <input type="text" id="condition-value-${conditionId}" name="conditions[${conditionId}][value]" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="condition-next-step-${conditionId}">Go to Step</label>
+                        <select id="condition-next-step-${conditionId}" name="conditions[${conditionId}][next_step_order]" required>
+                            ${stepOptions}
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="condition-actions">
+                    <button type="button" class="btn btn-danger btn-sm delete-condition-btn">Delete</button>
+                </div>
+            `;
+            
+            // Insert before the add button
+            conditionsContainer.insertBefore(conditionItem, this);
+            
+            // Add event listener to new delete button
+            const deleteBtn = conditionItem.querySelector('.delete-condition-btn');
+            deleteBtn.addEventListener('click', function() {
+                if (confirm('Are you sure you want to delete this condition? This cannot be undone.')) {
+                    conditionItem.remove();
+                }
+            });
+        });
+    });
+</script>
+
+<style>
+    /* Multi-step form editor styles */
+    .steps-container {
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+        padding: 15px;
+        background-color: #f9f9fa;
+    }
+    
+    .steps-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 15px;
+    }
+    
+    .steps-header h3 {
+        margin: 0;
+    }
+    
+    #steps-list {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+    
+    .step-item {
+        background-color: white;
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+        overflow: hidden;
+    }
+    
+    .step-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 10px 15px;
+        background-color: #f5f5f5;
+        border-bottom: 1px solid var(--border-color);
+    }
+    
+    .step-title {
+        font-weight: 500;
+    }
+    
+    .step-actions {
+        display: flex;
+        gap: 5px;
+    }
+    
+    .step-content {
+        padding: 15px;
+    }
+    
+    .empty-steps {
+        padding: 20px;
+        text-align: center;
+        color: var(--gray-color);
+        background-color: white;
+        border: 1px dashed var(--border-color);
+        border-radius: 4px;
+    }
+    
+    /* Conditions styling */
+    #conditions-container {
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+    }
+    
+    .condition-item {
+        background-color: white;
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+        padding: 15px;
+        display: flex;
+        align-items: flex-start;
+        gap: 15px;
+    }
+    
+    .condition-fields {
+        flex: 1;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 15px;
+    }
+    
+    .condition-actions {
+        padding-top: 25px;
+    }
+</style>
+{% endblock %}

@@ -1,0 +1,170 @@
+{% extends "layout.html" %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Dashboard</h1>
+    <div class="actions">
+        <a href="/forms/create" class="btn btn-primary">Create New Form</a>
+    </div>
+</div>
+
+<div class="stats">
+    <div class="stat-card total">
+        <div class="stat-header">
+            <h3>Total Submissions</h3>
+        </div>
+        <div class="stat-content">
+            <div class="number">{{ total_count }}</div>
+            <div class="trend">
+                {% if trend_percentage > 0 %}
+                <span class="trend-up">↑ {{ trend_percentage }}%</span>
+                {% elif trend_percentage < 0 %}
+                <span class="trend-down">↓ {{ trend_percentage|abs }}%</span>
+                {% else %}
+                <span class="trend-neutral">–</span>
+                {% endif %}
+                <span class="trend-period">vs. last week</span>
+            </div>
+        </div>
+    </div>
+    
+    <div class="stat-card success-rate">
+        <div class="stat-header">
+            <h3>Success Rate</h3>
+        </div>
+        <div class="stat-content">
+            <div class="number">{{ success_rate }}%</div>
+            <div class="chart-container">
+                <div class="progress-bar">
+                    <div class="progress" style="width: {{ success_rate }}%"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    {% for form_id, count in form_counts.items() %}
+    <div class="stat-card">
+        <div class="stat-header">
+            <h3>{{ forms[form_id].name }}</h3>
+            <a href="/forms/submissions/{{ form_id }}" class="btn btn-sm btn-light">View</a>
+        </div>
+        <div class="stat-content">
+            <div class="number">{{ count }}</div>
+            <div>Submissions</div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<div class="grid-row">
+    <div class="grid-col">
+        <div class="card">
+            <div class="card-header">
+                <h2>Recent Submissions</h2>
+                <a href="/submissions" class="btn btn-sm btn-secondary">View All</a>
+            </div>
+            
+            {% if submissions %}
+            <div class="submissions-list dashboard-list">
+                {% for submission in submissions[:5] %}
+                <div class="submission-card {% if submission.success %}submission-success{% else %}submission-error{% endif %}">
+                    <div class="submission-header">
+                        <div class="submission-form">{{ forms[submission.form_id].name }}</div>
+                        <div class="submission-date">{{ submission.created_at.strftime('%Y-%m-%d %H:%M') }}</div>
+                        <div class="submission-status">
+                            {% if submission.success %}
+                                <span class="badge success">Success</span>
+                            {% else %}
+                                <span class="badge danger">Error</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    
+                    <div class="submission-body">
+                        <table class="submission-data">
+                            {% for field, value in submission.data.items() %}
+                                <tr>
+                                    <th>{{ field }}</th>
+                                    <td>{{ value }}</td>
+                                </tr>
+                            {% endfor %}
+                        </table>
+                    </div>
+                    
+                    {% if not submission.success and submission.error %}
+                        <div class="submission-error-message">
+                            Error: {{ submission.error }}
+                        </div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="empty-state">
+                <p>No submissions yet.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    
+    <div class="grid-col">
+        <div class="card">
+            <div class="card-header">
+                <h2>Your Forms</h2>
+                <a href="/forms" class="btn btn-sm btn-secondary">Manage Forms</a>
+            </div>
+            
+            {% if forms %}
+            <div class="forms-list">
+                {% for form_id, form in forms.items() %}
+                <div class="form-item">
+                    <div class="form-info">
+                        <div class="form-name">{{ form.name }}</div>
+                        <div class="form-id">{{ form_id }}</div>
+                    </div>
+                    <div class="form-count">
+                        {{ form_counts[form_id] if form_counts and form_id in form_counts else 0 }} submissions
+                    </div>
+                    <div class="form-actions">
+                        <a href="/forms/edit/{{ form_id }}" class="btn btn-sm btn-primary">Edit</a>
+                        <a href="/forms/view/{{ form_id }}" class="btn btn-sm btn-secondary">View</a>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="empty-state">
+                <p>No forms created yet.</p>
+                <a href="/forms/create" class="btn btn-primary">Create Your First Form</a>
+            </div>
+            {% endif %}
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h2>Quick Links</h2>
+            </div>
+            <div class="quick-links">
+                <a href="/forms/create" class="quick-link">
+                    <span class="link-icon">+</span>
+                    <span class="link-text">Create New Form</span>
+                </a>
+                <a href="/forms" class="quick-link">
+                    <span class="link-icon">📋</span>
+                    <span class="link-text">Manage Forms</span>
+                </a>
+                <a href="/submissions" class="quick-link">
+                    <span class="link-icon">📬</span>
+                    <span class="link-text">All Submissions</span>
+                </a>
+                <a href="/settings" class="quick-link">
+                    <span class="link-icon">⚙️</span>
+                    <span class="link-text">Settings</span>
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

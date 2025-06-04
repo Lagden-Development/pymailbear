@@ -1,0 +1,253 @@
+{% extends "layout.html" %}
+
+{% block title %}Form Integration - {{ form.name }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>{{ form.name }} Integration</h1>
+    <div class="actions">
+        <a href="/forms/edit/{{ form.id }}" class="btn btn-primary">Edit Form</a>
+        <a href="/forms" class="btn btn-secondary">Back to Forms</a>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Integration Code</h2>
+    <p>Use the following code to integrate this form on your website:</p>
+    
+    <div class="code-tabs">
+        <div class="tab-buttons">
+            <button class="tab-btn active" onclick="showTab(this, 'html-code')">HTML</button>
+            <button class="tab-btn" onclick="showTab(this, 'js-code')">JavaScript</button>
+            <button class="tab-btn" onclick="showTab(this, 'react-code')">React</button>
+        </div>
+        
+        <div id="html-code" class="tab-content active">
+            <pre><code>&lt;!-- 1. Add data-mailbear attribute to your form --&gt;
+&lt;form data-mailbear="{{ form.id }}"&gt;
+    &lt;input type="text" name="name" placeholder="Name" required&gt;
+    &lt;input type="email" name="email" placeholder="Email" required&gt;
+    &lt;textarea name="message" placeholder="Message" required&gt;&lt;/textarea&gt;
+    &lt;button type="submit"&gt;Send&lt;/button&gt;
+&lt;/form&gt;
+
+&lt;!-- 2. Include our script --&gt;
+&lt;script src="{{ request.base_url }}api/v1/form/{{ form.id }}/js" async&gt;&lt;/script&gt;</code></pre>
+        </div>
+        
+        <div id="js-code" class="tab-content">
+            <pre><code>// If you prefer to handle the form manually
+const form = document.querySelector('form');
+form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const formData = new FormData(form);
+    
+    try {
+        const response = await fetch('{{ request.base_url }}api/v1/form/{{ form.id }}', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const result = await response.json();
+        if (result.status === 'success') {
+            alert(result.message);
+            form.reset();
+        } else {
+            alert('Error: ' + result.message);
+        }
+    } catch (error) {
+        alert('Submission failed: ' + error.message);
+    }
+});</code></pre>
+        </div>
+        
+        <div id="react-code" class="tab-content">
+            <pre><code>import { useState } from 'react';
+
+function ContactForm() {
+    const [formData, setFormData] = useState({
+        name: '',
+        email: '',
+        message: ''
+    });
+    const [status, setStatus] = useState(null);
+    
+    const handleChange = (e) => {
+        setFormData({
+            ...formData,
+            [e.target.name]: e.target.value
+        });
+    };
+    
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        setStatus('submitting');
+        
+        try {
+            const form = new FormData();
+            for (const key in formData) {
+                form.append(key, formData[key]);
+            }
+            
+            const response = await fetch('{{ request.base_url }}api/v1/form/{{ form.id }}', {
+                method: 'POST',
+                body: form
+            });
+            
+            const result = await response.json();
+            if (result.status === 'success') {
+                setStatus('success');
+                setFormData({ name: '', email: '', message: '' });
+            } else {
+                setStatus('error');
+                console.error(result.message);
+            }
+        } catch (error) {
+            setStatus('error');
+            console.error(error);
+        }
+    };
+    
+    return (
+        &lt;div&gt;
+            {status === 'success' && (
+                &lt;div className="success-message"&gt;Thank you! Your message has been sent.&lt;/div&gt;
+            )}
+            
+            {status === 'error' && (
+                &lt;div className="error-message"&gt;There was an error sending your message.&lt;/div&gt;
+            )}
+            
+            &lt;form onSubmit={handleSubmit}&gt;
+                &lt;div&gt;
+                    &lt;label htmlFor="name"&gt;Name&lt;/label&gt;
+                    &lt;input
+                        id="name"
+                        type="text"
+                        name="name"
+                        value={formData.name}
+                        onChange={handleChange}
+                        required
+                    /&gt;
+                &lt;/div&gt;
+                
+                &lt;div&gt;
+                    &lt;label htmlFor="email"&gt;Email&lt;/label&gt;
+                    &lt;input
+                        id="email"
+                        type="email"
+                        name="email"
+                        value={formData.email}
+                        onChange={handleChange}
+                        required
+                    /&gt;
+                &lt;/div&gt;
+                
+                &lt;div&gt;
+                    &lt;label htmlFor="message"&gt;Message&lt;/label&gt;
+                    &lt;textarea
+                        id="message"
+                        name="message"
+                        value={formData.message}
+                        onChange={handleChange}
+                        required
+                    /&gt;
+                &lt;/div&gt;
+                
+                &lt;button type="submit" disabled={status === 'submitting'}&gt;
+                    {status === 'submitting' ? 'Sending...' : 'Send Message'}
+                &lt;/button&gt;
+            &lt;/form&gt;
+        &lt;/div&gt;
+    );
+}
+
+export default ContactForm;</code></pre>
+        </div>
+    </div>
+</div>
+
+<div class="grid-row">
+    <div class="grid-col">
+        <div class="card">
+            <h2>API Endpoints</h2>
+            
+            <h3>Form Submission URL</h3>
+            <div class="endpoint-url">
+                <code>{{ request.base_url }}api/v1/form/{{ form.id }}</code>
+            </div>
+            
+            <h3>JavaScript Handler URL</h3>
+            <div class="endpoint-url">
+                <code>{{ request.base_url }}api/v1/form/{{ form.id }}/js</code>
+            </div>
+        </div>
+    </div>
+    
+    <div class="grid-col">
+        <div class="card">
+            <h2>Form Details</h2>
+            
+            <div class="details-table">
+                <div class="details-row">
+                    <div class="details-label">ID</div>
+                    <div class="details-value">{{ form.id }}</div>
+                </div>
+                
+                <div class="details-row">
+                    <div class="details-label">Name</div>
+                    <div class="details-value">{{ form.name }}</div>
+                </div>
+                
+                <div class="details-row">
+                    <div class="details-label">Recipients</div>
+                    <div class="details-value">
+                        {% if form.to_emails %}
+                            {% for email in form.to_emails.split(',') %}
+                                <div>{{ email.strip() }}</div>
+                            {% endfor %}
+                        {% else %}
+                            -
+                        {% endif %}
+                    </div>
+                </div>
+                
+                <div class="details-row">
+                    <div class="details-label">Allowed Domains</div>
+                    <div class="details-value">
+                        {% if form.domains %}
+                            {% for domain in form.domains %}
+                                <span class="domain-badge">{{ domain.domain }}</span>
+                            {% endfor %}
+                        {% else %}
+                            <span class="domain-badge">*</span> (All domains)
+                        {% endif %}
+                    </div>
+                </div>
+                
+                <div class="details-row">
+                    <div class="details-label">Honeypot Protection</div>
+                    <div class="details-value">
+                        {% if form.honeypot_enabled %}
+                            <span class="badge success">Enabled</span>
+                        {% else %}
+                            <span class="badge danger">Disabled</span>
+                        {% endif %}
+                    </div>
+                </div>
+                
+                <div class="details-row">
+                    <div class="details-label">Created</div>
+                    <div class="details-value">
+                        {% if form.created_at %}
+                            {{ form.created_at.strftime('%Y-%m-%d %H:%M:%S') }}
+                        {% else %}
+                            -
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

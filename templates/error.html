@@ -1,0 +1,46 @@
+{% extends "layout.html" %}
+
+{% block title %}Error {{ status_code }}{% endblock %}
+
+{% block content %}
+<div class="error-container">
+    <div class="error-icon">
+        <i class="fas fa-exclamation-triangle"></i>
+    </div>
+    <h1>Error {{ status_code }}</h1>
+    <p class="error-message">{{ error_message }}</p>
+    
+    <div class="error-actions">
+        <a href="/" class="btn btn-primary">
+            <i class="fas fa-home"></i> Return to Dashboard
+        </a>
+    </div>
+</div>
+{% endblock %}
+
+{% block styles %}
+<style>
+    .error-container {
+        text-align: center;
+        padding: 4rem 2rem;
+        max-width: 600px;
+        margin: 0 auto;
+    }
+    
+    .error-icon {
+        font-size: 4rem;
+        color: #dc3545;
+        margin-bottom: 1.5rem;
+    }
+    
+    .error-message {
+        font-size: 1.2rem;
+        margin-bottom: 2rem;
+        color: #555;
+    }
+    
+    .error-actions {
+        margin-top: 2rem;
+    }
+</style>
+{% endblock %}

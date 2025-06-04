@@ -1,0 +1,56 @@
+{% extends "layout.html" %}
+
+{% block title %}Forms{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Forms</h1>
+    <div class="actions">
+        <a href="/forms/create" class="btn btn-primary">Create New Form</a>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Your Forms</h2>
+    
+    {% if forms %}
+    <table>
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Recipient</th>
+                <th>Submissions</th>
+                <th>Created</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for form_id, form in forms.items() %}
+            <tr>
+                <td>
+                    <strong>{{ form.name }}</strong>
+                    <div class="form-id">ID: {{ form_id }}</div>
+                </td>
+                <td>{{ form.to_email }}</td>
+                <td>{{ form_counts[form_id] if form_counts and form_id in form_counts else 0 }}</td>
+                <td>
+                    {% if form.created_at %}
+                        {{ form.created_at.strftime('%Y-%m-%d') }}
+                    {% else %}
+                        -
+                    {% endif %}
+                </td>
+                <td class="actions-cell">
+                    <a href="/forms/edit/{{ form_id }}" class="btn btn-primary btn-sm">Edit</a>
+                    <a href="/forms/view/{{ form_id }}" class="btn btn-secondary btn-sm">Integration</a>
+                    <a href="/forms/submissions/{{ form_id }}" class="btn btn-info btn-sm">Submissions</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No forms configured. Add forms to your config.yml file.</p>
+    {% endif %}
+</div>
+{% endblock %}
