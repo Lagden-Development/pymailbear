@@ -55,16 +55,23 @@ class Form(Base):
     redirect_url = Column(String(255))
     honeypot_enabled = Column(Boolean, default=False, nullable=False)
     honeypot_field = Column(String(50), default="_honeypot")
+    
+    # hCaptcha configuration
+    hcaptcha_enabled = Column(Boolean, default=False, nullable=False)
+    hcaptcha_site_key = Column(String(255))
+    hcaptcha_secret_key = Column(String(255))
+    
+    # Field validation limits
+    max_field_length = Column(Integer, default=5000, nullable=False)  # Maximum length for any field
+    max_fields = Column(Integer, default=50, nullable=False)  # Maximum number of fields allowed
+    max_file_size = Column(Integer, default=10485760, nullable=False)  # 10MB in bytes
+    
+    # Rate limiting settings
+    rate_limit_per_ip_per_minute = Column(Integer, default=5, nullable=False)  # Per-IP form submissions per minute
+    
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
     active = Column(Boolean, default=True, nullable=False)
-
-    # Multi-step form configuration
-    multi_step_enabled = Column(Boolean, default=False, nullable=False)
-    show_progress_indicator = Column(Boolean, default=True, nullable=False)
-    progress_indicator_type = Column(
-        Enum("steps", "progress-bar", "dots"), default="steps", nullable=False
-    )
 
     # User relationship (optional, a form could be owned by a user)
     user_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"))
@@ -77,11 +84,8 @@ class Form(Base):
     submissions = relationship(
         "Submission", back_populates="form", cascade="all, delete-orphan"
     )
-    steps = relationship(
-        "FormStep",
-        back_populates="form",
-        cascade="all, delete-orphan",
-        order_by="FormStep.step_order",
+    tokens = relationship(
+        "FormToken", back_populates="form", cascade="all, delete-orphan"
     )
 
     def __repr__(self):
@@ -168,67 +172,6 @@ class APIKey(Base):
         return f"<APIKey {self.name}>"
 
 
-class FormStep(Base):
-    __tablename__ = "form_steps"
-
-    id = Column(String(36), primary_key=True, default=generate_uuid)
-    form_id = Column(
-        String(36), ForeignKey("forms.id", ondelete="CASCADE"), nullable=False
-    )
-    title = Column(String(100), nullable=False)
-    description = Column(Text)
-    step_order = Column(Integer, nullable=False)
-    fields = Column(JSON)  # Field configurations for this step
-    required_fields = Column(JSON)  # Fields that must be filled before proceeding
-    next_button_text = Column(String(50), default="Next", nullable=False)
-    previous_button_text = Column(String(50), default="Previous", nullable=False)
-
-    # Relationships
-    form = relationship("Form", back_populates="steps")
-    conditions = relationship(
-        "FormStepCondition", back_populates="step", cascade="all, delete-orphan"
-    )
-
-    # Constraints
-    __table_args__ = (
-        UniqueConstraint("form_id", "step_order", name="uix_form_step_order"),
-    )
-
-    def __repr__(self):
-        return f"<FormStep {self.title} (Order: {self.step_order})>"
-
-
-class FormStepCondition(Base):
-    __tablename__ = "form_step_conditions"
-
-    id = Column(String(36), primary_key=True, default=generate_uuid)
-    step_id = Column(
-        String(36), ForeignKey("form_steps.id", ondelete="CASCADE"), nullable=False
-    )
-    field_name = Column(String(100), nullable=False)  # Field to check
-    operator = Column(
-        Enum(
-            "equals",
-            "not_equals",
-            "contains",
-            "not_contains",
-            "greater_than",
-            "less_than",
-        ),
-        nullable=False,
-    )
-    value = Column(String(255), nullable=False)  # Value to compare against
-    next_step_order = Column(
-        Integer, nullable=False
-    )  # Which step to go to if condition is met
-
-    # Relationships
-    step = relationship("FormStep")
-
-    def __repr__(self):
-        return f"<FormStepCondition {self.field_name} {self.operator} {self.value}>"
-
-
 class Setting(Base):
     __tablename__ = "settings"
 
@@ -241,3 +184,30 @@ class Setting(Base):
 
     def __repr__(self):
         return f"<Setting {self.key}>"
+
+
+class FormToken(Base):
+    """Model for time-based form submission tokens."""
+    
+    __tablename__ = "form_tokens"
+    
+    id = Column(String(36), primary_key=True)
+    form_id = Column(String(36), ForeignKey("forms.id", ondelete="CASCADE"), nullable=False, index=True)
+    token = Column(String(128), unique=True, nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    used = Column(Boolean, default=False, nullable=False)
+    ip_address = Column(String(45), nullable=True)  # Support IPv6
+    user_agent = Column(Text, nullable=True)
+    
+    # Relationship
+    form = relationship("Form", back_populates="tokens")
+    
+    # Index for cleanup operations
+    __table_args__ = (
+        Index('idx_form_tokens_expires_at', 'expires_at'),
+        Index('idx_form_tokens_form_id_token', 'form_id', 'token'),
+    )
+    
+    def __repr__(self):
+        return f"<FormToken {self.token[:8]}... for form {self.form_id}>"

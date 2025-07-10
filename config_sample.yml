@@ -39,6 +39,15 @@ smtp:
   ssl_context: null  # Advanced SSL context settings
   timeout: 60  # Connection timeout in seconds
 
+# hCaptcha Configuration (Optional)
+hcaptcha:
+  enabled: false  # Set to true to enable global hCaptcha support
+  site_key: "your_hcaptcha_site_key_here"  # Get from hCaptcha dashboard
+  secret_key: "your_hcaptcha_secret_key_here"  # Get from hCaptcha dashboard
+  api_url: "https://hcaptcha.com/siteverify"  # hCaptcha API endpoint
+  timeout: 10  # API request timeout in seconds
+  invisible: false  # Always Challenge mode (recommended for security)
+
 # Note: MailBear now operates in database-only mode. All forms are created and managed
 # through the web dashboard at http://localhost:1234/forms
 # 
@@ -49,9 +58,11 @@ smtp:
 # - Comprehensive analytics
 # - Form templates
 # - API key management
+# - hCaptcha integration for spam protection
 #
 # To get started:
 # 1. Set up your database configuration above
 # 2. Run: python init_db.py
 # 3. Create an admin user: python create_admin.py
-# 4. Access the dashboard at http://localhost:1234
+# 4. (Optional) Configure hCaptcha keys above
+# 5. Access the dashboard at http://localhost:1234

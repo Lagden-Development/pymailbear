@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 
 class FormSubmission(BaseModel):
+    id: Optional[str] = None  # Database ID for submissions
     form_id: str
     data: Dict[str, str]
     created_at: datetime = Field(default_factory=datetime.now)

@@ -1,10 +1,10 @@
 {% extends "layout.html" %}
 
-{% block title %}Form Integration - {{ form.name }}{% endblock %}
+{% block title %}API Documentation - {{ form.name }}{% endblock %}
 
 {% block content %}
 <div class="page-header">
-    <h1>{{ form.name }} Integration</h1>
+    <h1>{{ form.name }} API Documentation</h1>
     <div class="actions">
         <a href="/forms/edit/{{ form.id }}" class="btn btn-primary">Edit Form</a>
         <a href="/forms" class="btn btn-secondary">Back to Forms</a>
@@ -12,50 +12,151 @@
 </div>
 
 <div class="card">
-    <h2>Integration Code</h2>
-    <p>Use the following code to integrate this form on your website:</p>
+    <h2>API Endpoint</h2>
+    <p>Submit forms to this endpoint for processing and email delivery:</p>
+    
+    <div class="endpoint-details">
+        <div class="endpoint-url">
+            <strong>POST</strong> <code>{{ request.base_url }}api/v1/form/{{ form.id }}</code>
+        </div>
+        
+        <div class="endpoint-info">
+            <h3>Content-Type</h3>
+            <p><code>multipart/form-data</code> or <code>application/x-www-form-urlencoded</code></p>
+            
+            <h3>Rate Limiting</h3>
+            <p>{{ form.rate_limit_per_ip_per_minute or 5 }} requests per minute per IP address</p>
+            
+            <h3>Required Headers</h3>
+            <ul>
+                <li><code>Origin</code> - Must match allowed domains for this form</li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Security Requirements</h2>
+    <p>This form has the following security measures enabled:</p>
+    
+    <div class="security-details">
+        {% if form.honeypot_enabled %}
+        <div class="security-item">
+            <h3>🍯 Honeypot Protection</h3>
+            <p><strong>Status:</strong> <span class="badge success">Enabled</span></p>
+            <p><strong>Field Name:</strong> <code>{{ form.honeypot_field or "_honeypot" }}</code></p>
+            <p><strong>Requirement:</strong> Include this hidden field in your form. It must remain empty.</p>
+            <pre><code>&lt;input type="hidden" name="{{ form.honeypot_field or "_honeypot" }}" value=""&gt;</code></pre>
+        </div>
+        {% endif %}
+        
+        {% if form.hcaptcha_enabled %}
+        <div class="security-item">
+            <h3>🔒 hCaptcha Protection</h3>
+            <p><strong>Status:</strong> <span class="badge success">Enabled</span></p>
+            <p><strong>Mode:</strong> Always Challenge</p>
+            <p><strong>Site Key:</strong> <code>{{ form.hcaptcha_site_key or "Using global configuration" }}</code></p>
+            <p><strong>Requirement:</strong> Include hCaptcha token in your form submission.</p>
+            <pre><code>&lt;input type="hidden" name="h-captcha-response" value="[token]"&gt;</code></pre>
+        </div>
+        {% endif %}
+        
+        <div class="security-item">
+            <h3>🛡️ Enhanced Security Features</h3>
+            <p><strong>CSRF Protection:</strong> <span class="badge success">Enabled</span></p>
+            <p><strong>Custom Headers Required:</strong> <code>X-Requested-With</code>, <code>X-Form-Origin</code></p>
+            <p><strong>Form Tokens:</strong> Time-limited tokens (15 minutes) required for submission</p>
+            <p><strong>Origin Validation:</strong> Both Origin and Referer headers validated</p>
+            <p><strong>Requirement:</strong> All submissions must use JavaScript with proper security headers and tokens.</p>
+        </div>
+        
+        {% if not form.honeypot_enabled and not form.hcaptcha_enabled %}
+        <div class="security-item">
+            <p><strong>Additional security measures:</strong> Consider enabling honeypot protection or hCaptcha for even stronger spam prevention.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card">
+    <h2>Example Implementation</h2>
+    <p>Here's how to implement form submission in different environments:</p>
     
     <div class="code-tabs">
         <div class="tab-buttons">
-            <button class="tab-btn active" onclick="showTab(this, 'html-code')">HTML</button>
-            <button class="tab-btn" onclick="showTab(this, 'js-code')">JavaScript</button>
+            <button class="tab-btn active" onclick="showTab(this, 'js-code')">JavaScript</button>
             <button class="tab-btn" onclick="showTab(this, 'react-code')">React</button>
+            <button class="tab-btn" onclick="showTab(this, 'curl-code')">cURL</button>
         </div>
         
-        <div id="html-code" class="tab-content active">
-            <pre><code>&lt;!-- 1. Add data-mailbear attribute to your form --&gt;
-&lt;form data-mailbear="{{ form.id }}"&gt;
-    &lt;input type="text" name="name" placeholder="Name" required&gt;
-    &lt;input type="email" name="email" placeholder="Email" required&gt;
-    &lt;textarea name="message" placeholder="Message" required&gt;&lt;/textarea&gt;
-    &lt;button type="submit"&gt;Send&lt;/button&gt;
-&lt;/form&gt;
-
-&lt;!-- 2. Include our script --&gt;
-&lt;script src="{{ request.base_url }}api/v1/form/{{ form.id }}/js" async&gt;&lt;/script&gt;</code></pre>
-        </div>
-        
-        <div id="js-code" class="tab-content">
-            <pre><code>// If you prefer to handle the form manually
+        <div id="js-code" class="tab-content active">
+            <pre><code>// Enhanced form submission with security fields and token
 const form = document.querySelector('form');
 form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const formData = new FormData(form);
     
     try {
+        // Step 1: Get a form token for CSRF protection
+        const tokenResponse = await fetch('{{ request.base_url }}api/v1/form/{{ form.id }}/token', {
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-Form-Origin': window.location.origin
+            }
+        });
+        
+        if (!tokenResponse.ok) {
+            throw new Error('Failed to get form token');
+        }
+        
+        const tokenData = await tokenResponse.json();
+        
+        // Step 2: Prepare form data with security fields
+        const formData = new FormData(form);
+        
+        // Add form token for CSRF protection
+        formData.append('form_token', tokenData.token);
+        
+        {% if form.honeypot_enabled %}
+        // Add honeypot field (must be empty)
+        formData.append('{{ form.honeypot_field or "_honeypot" }}', '');
+        {% endif %}
+        
+        {% if form.hcaptcha_enabled %}
+        // Add hCaptcha token (Always Challenge mode)
+        // Note: You'll need to implement hCaptcha widget and get the response token
+        const hcaptchaToken = hcaptcha.getResponse(); // Get response from hCaptcha widget
+        if (!hcaptchaToken) {
+            alert('Please complete the hCaptcha challenge');
+            return;
+        }
+        formData.append('h-captcha-response', hcaptchaToken);
+        {% endif %}
+        
+        // Step 3: Submit form with all security fields
         const response = await fetch('{{ request.base_url }}api/v1/form/{{ form.id }}', {
             method: 'POST',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-Form-Origin': window.location.origin
+            },
             body: formData
         });
         
         const result = await response.json();
         if (result.status === 'success') {
+            console.log('Form submitted successfully:', result.message);
+            {% if form.redirect_url %}
+            window.location.href = '{{ form.redirect_url }}';
+            {% else %}
             alert(result.message);
             form.reset();
+            {% endif %}
         } else {
+            console.error('Form submission failed:', result.message);
             alert('Error: ' + result.message);
         }
     } catch (error) {
+        console.error('Network error:', error);
         alert('Submission failed: ' + error.message);
     }
 });</code></pre>
@@ -72,25 +173,52 @@ function ContactForm() {
     });
     const [status, setStatus] = useState(null);
     
-    const handleChange = (e) => {
-        setFormData({
-            ...formData,
-            [e.target.name]: e.target.value
-        });
-    };
-    
     const handleSubmit = async (e) => {
         e.preventDefault();
         setStatus('submitting');
         
         try {
+            // Step 1: Get a form token for CSRF protection
+            const tokenResponse = await fetch('{{ request.base_url }}api/v1/form/{{ form.id }}/token', {
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'X-Form-Origin': window.location.origin
+                }
+            });
+            
+            if (!tokenResponse.ok) {
+                throw new Error('Failed to get form token');
+            }
+            
+            const tokenData = await tokenResponse.json();
+            
+            // Step 2: Prepare form data with security fields
             const form = new FormData();
             for (const key in formData) {
                 form.append(key, formData[key]);
             }
             
+            // Add form token for CSRF protection
+            form.append('form_token', tokenData.token);
+            
+            {% if form.honeypot_enabled %}
+            // Add honeypot field (must be empty)
+            form.append('{{ form.honeypot_field or "_honeypot" }}', '');
+            {% endif %}
+            
+            {% if form.recaptcha_enabled %}
+            // Add reCAPTCHA token
+            const recaptchaToken = await window.grecaptcha.execute('{{ form.recaptcha_site_key }}', {action: 'submit'});
+            form.append('g-recaptcha-response', recaptchaToken);
+            {% endif %}
+            
+            // Step 3: Submit form with all security fields
             const response = await fetch('{{ request.base_url }}api/v1/form/{{ form.id }}', {
                 method: 'POST',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'X-Form-Origin': window.location.origin
+                },
                 body: form
             });
             
@@ -109,60 +237,40 @@ function ContactForm() {
     };
     
     return (
-        &lt;div&gt;
-            {status === 'success' && (
-                &lt;div className="success-message"&gt;Thank you! Your message has been sent.&lt;/div&gt;
-            )}
-            
-            {status === 'error' && (
-                &lt;div className="error-message"&gt;There was an error sending your message.&lt;/div&gt;
-            )}
-            
-            &lt;form onSubmit={handleSubmit}&gt;
-                &lt;div&gt;
-                    &lt;label htmlFor="name"&gt;Name&lt;/label&gt;
-                    &lt;input
-                        id="name"
-                        type="text"
-                        name="name"
-                        value={formData.name}
-                        onChange={handleChange}
-                        required
-                    /&gt;
-                &lt;/div&gt;
-                
-                &lt;div&gt;
-                    &lt;label htmlFor="email"&gt;Email&lt;/label&gt;
-                    &lt;input
-                        id="email"
-                        type="email"
-                        name="email"
-                        value={formData.email}
-                        onChange={handleChange}
-                        required
-                    /&gt;
-                &lt;/div&gt;
-                
-                &lt;div&gt;
-                    &lt;label htmlFor="message"&gt;Message&lt;/label&gt;
-                    &lt;textarea
-                        id="message"
-                        name="message"
-                        value={formData.message}
-                        onChange={handleChange}
-                        required
-                    /&gt;
-                &lt;/div&gt;
-                
-                &lt;button type="submit" disabled={status === 'submitting'}&gt;
-                    {status === 'submitting' ? 'Sending...' : 'Send Message'}
-                &lt;/button&gt;
-            &lt;/form&gt;
-        &lt;/div&gt;
+        &lt;form onSubmit={handleSubmit}&gt;
+            {/* Your form fields here */}
+            {% if form.honeypot_enabled %}
+            &lt;input type="hidden" name="{{ form.honeypot_field or "_honeypot" }}" value="" /&gt;
+            {% endif %}
+            &lt;button type="submit" disabled={status === 'submitting'}&gt;
+                {status === 'submitting' ? 'Sending...' : 'Send Message'}
+            &lt;/button&gt;
+        &lt;/form&gt;
     );
-}
+}</code></pre>
+        </div>
+        
+        <div id="curl-code" class="tab-content">
+            <pre><code># Enhanced cURL example with token-based security
 
-export default ContactForm;</code></pre>
+# Step 1: Get a form token
+TOKEN=$(curl -s -X GET '{{ request.base_url }}api/v1/form/{{ form.id }}/token' \
+  -H 'Origin: https://yourdomain.com' \
+  -H 'X-Requested-With: XMLHttpRequest' \
+  -H 'X-Form-Origin: https://yourdomain.com' | jq -r '.token')
+
+# Step 2: Submit form with token and security headers
+curl -X POST '{{ request.base_url }}api/v1/form/{{ form.id }}' \
+  -H 'Origin: https://yourdomain.com' \
+  -H 'Referer: https://yourdomain.com/contact' \
+  -H 'X-Requested-With: XMLHttpRequest' \
+  -H 'X-Form-Origin: https://yourdomain.com' \
+  -F "form_token=$TOKEN" \
+  -F 'name=John Doe' \
+  -F 'email=john@example.com' \
+  -F 'message=Hello from the contact form!'{% if form.honeypot_enabled %} \
+  -F '{{ form.honeypot_field or "_honeypot" }}='{% endif %}{% if form.recaptcha_enabled %} \
+  -F 'g-recaptcha-response=YOUR_RECAPTCHA_TOKEN'{% endif %}</code></pre>
         </div>
     </div>
 </div>
@@ -170,17 +278,30 @@ export default ContactForm;</code></pre>
 <div class="grid-row">
     <div class="grid-col">
         <div class="card">
-            <h2>API Endpoints</h2>
+            <h2>Response Format</h2>
             
-            <h3>Form Submission URL</h3>
-            <div class="endpoint-url">
-                <code>{{ request.base_url }}api/v1/form/{{ form.id }}</code>
-            </div>
+            <h3>Success Response</h3>
+            <pre><code>{
+    "status": "success",
+    "message": "{{ form.success_message or 'Form submitted successfully' }}",
+    "redirect": {{ '"' + form.redirect_url + '"' if form.redirect_url else 'null' }}
+}</code></pre>
             
-            <h3>JavaScript Handler URL</h3>
-            <div class="endpoint-url">
-                <code>{{ request.base_url }}api/v1/form/{{ form.id }}/js</code>
-            </div>
+            <h3>Error Response</h3>
+            <pre><code>{
+    "status": "error",
+    "message": "Error description"
+}</code></pre>
+            
+            <h3>HTTP Status Codes</h3>
+            <ul>
+                <li><code>200</code> - Form submitted successfully</li>
+                <li><code>400</code> - Invalid request or validation failed</li>
+                <li><code>403</code> - Origin not allowed or security check failed</li>
+                <li><code>404</code> - Form not found</li>
+                <li><code>429</code> - Rate limit exceeded</li>
+                <li><code>500</code> - Internal server error</li>
+            </ul>
         </div>
     </div>
     
@@ -230,6 +351,18 @@ export default ContactForm;</code></pre>
                     <div class="details-value">
                         {% if form.honeypot_enabled %}
                             <span class="badge success">Enabled</span>
+                            <div><small>Field: <code>{{ form.honeypot_field or "_honeypot" }}</code></small></div>
+                        {% else %}
+                            <span class="badge danger">Disabled</span>
+                        {% endif %}
+                    </div>
+                </div>
+                
+                <div class="details-row">
+                    <div class="details-label">hCaptcha Protection</div>
+                    <div class="details-value">
+                        {% if form.hcaptcha_enabled %}
+                            <span class="badge success">Enabled (Always Challenge)</span>
                         {% else %}
                             <span class="badge danger">Disabled</span>
                         {% endif %}

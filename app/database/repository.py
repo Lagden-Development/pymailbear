@@ -1,9 +1,9 @@
-from sqlalchemy import select, func, desc, and_, or_, Integer
+from sqlalchemy import select, func, desc, and_, or_, Integer, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from typing import List, Optional, Dict, Any, Tuple
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from app.database.models import (
     User,
@@ -13,8 +13,7 @@ from app.database.models import (
     FormTemplate,
     APIKey,
     Setting,
-    FormStep,
-    FormStepCondition,
+    FormToken,
 )
 
 
@@ -78,6 +77,13 @@ class FormRepository:
         redirect_url: Optional[str] = None,
         honeypot_enabled: bool = False,
         honeypot_field: str = "_honeypot",
+        hcaptcha_enabled: bool = False,
+        hcaptcha_site_key: Optional[str] = None,
+        hcaptcha_secret_key: Optional[str] = None,
+        max_field_length: int = 5000,
+        max_fields: int = 50,
+        max_file_size: int = 10485760,
+        rate_limit_per_ip_per_minute: int = 5,
         user_id: Optional[str] = None,
         allowed_domains: Optional[List[str]] = None,
     ) -> Form:
@@ -94,6 +100,13 @@ class FormRepository:
             redirect_url=redirect_url,
             honeypot_enabled=honeypot_enabled,
             honeypot_field=honeypot_field,
+            hcaptcha_enabled=hcaptcha_enabled,
+            hcaptcha_site_key=hcaptcha_site_key,
+            hcaptcha_secret_key=hcaptcha_secret_key,
+            max_field_length=max_field_length,
+            max_fields=max_fields,
+            max_file_size=max_file_size,
+            rate_limit_per_ip_per_minute=rate_limit_per_ip_per_minute,
             user_id=user_id,
         )
 
@@ -113,24 +126,12 @@ class FormRepository:
     async def get_by_id(
         db: AsyncSession,
         form_id: str,
-        include_steps: bool = False,
-        include_step_conditions: bool = False,
     ) -> Optional[Form]:
         """Get form by ID with related data."""
         query = select(Form).where(Form.id == form_id)
 
         # Always include domains
         query = query.options(selectinload(Form.domains))
-
-        # Optionally include steps
-        if include_steps:
-            query = query.options(selectinload(Form.steps))
-
-        # Optionally include step conditions
-        if include_step_conditions and include_steps:
-            query = query.options(
-                selectinload(Form.steps).selectinload(FormStep.conditions)
-            )
 
         result = await db.execute(query)
         return result.scalar_one_or_none()
@@ -177,7 +178,7 @@ class FormRepository:
         if allowed_domains is not None:
             # Delete existing domains
             await db.execute(
-                select(FormDomain).where(FormDomain.form_id == form_id).delete()
+                delete(FormDomain).where(FormDomain.form_id == form_id)
             )
 
             # Add new domains
@@ -350,6 +351,17 @@ class SubmissionRepository:
             "by_form": form_stats,
         }
 
+    @staticmethod
+    async def delete(db: AsyncSession, submission_id: str) -> bool:
+        """Delete a submission by ID."""
+        submission = await db.get(Submission, submission_id)
+        if not submission:
+            return False
+        
+        await db.delete(submission)
+        await db.commit()
+        return True
+
 
 class FormTemplateRepository:
     """Repository for FormTemplate operations."""
@@ -511,3 +523,80 @@ class SettingRepository:
         result = await db.execute(query)
         settings = result.scalars().all()
         return {setting.key: setting.value for setting in settings}
+
+
+class FormTokenRepository:
+    """Repository for FormToken operations."""
+
+    @staticmethod
+    async def create(
+        db: AsyncSession,
+        form_id: str,
+        token: str,
+        expires_at: datetime,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None,
+    ) -> FormToken:
+        """Create a new form token."""
+        form_token = FormToken(
+            id=str(uuid.uuid4()),
+            form_id=form_id,
+            token=token,
+            expires_at=expires_at,
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
+
+        db.add(form_token)
+        await db.commit()
+        await db.refresh(form_token)
+        return form_token
+
+    @staticmethod
+    async def get_by_token(db: AsyncSession, token: str) -> Optional[FormToken]:
+        """Get a form token by token value."""
+        query = select(FormToken).where(FormToken.token == token)
+        result = await db.execute(query)
+        return result.scalar_one_or_none()
+
+    @staticmethod
+    async def get_by_form_and_token(
+        db: AsyncSession, form_id: str, token: str
+    ) -> Optional[FormToken]:
+        """Get a form token by form ID and token value."""
+        query = select(FormToken).where(
+            and_(FormToken.form_id == form_id, FormToken.token == token)
+        )
+        result = await db.execute(query)
+        return result.scalar_one_or_none()
+
+    @staticmethod
+    async def mark_as_used(db: AsyncSession, token_id: str) -> bool:
+        """Mark a token as used."""
+        token = await db.get(FormToken, token_id)
+        if not token:
+            return False
+
+        token.used = True
+        await db.commit()
+        return True
+
+    @staticmethod
+    async def cleanup_expired_tokens(db: AsyncSession) -> int:
+        """Remove expired tokens and return count of deleted tokens."""
+        now = datetime.now()
+        query = delete(FormToken).where(FormToken.expires_at < now)
+        result = await db.execute(query)
+        await db.commit()
+        return result.rowcount
+
+    @staticmethod
+    async def cleanup_used_tokens(db: AsyncSession, older_than_hours: int = 24) -> int:
+        """Remove used tokens older than specified hours."""
+        cutoff_time = datetime.now() - timedelta(hours=older_than_hours)
+        query = delete(FormToken).where(
+            and_(FormToken.used == True, FormToken.created_at < cutoff_time)
+        )
+        result = await db.execute(query)
+        await db.commit()
+        return result.rowcount

@@ -1,3 +1,3 @@
-from app.utils.minify import minify_js, minify_css
+from app.utils.ip_utils import get_real_ip, get_client_info, is_cloudflare_request
 
-__all__ = ["minify_js", "minify_css"]
+__all__ = ["get_real_ip", "get_client_info", "is_cloudflare_request"]

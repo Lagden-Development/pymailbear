@@ -2,3 +2,4 @@ config.yml
 data/*
 .venv/
 __pycache__/
+logs/

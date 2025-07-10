@@ -1,14 +1,12 @@
-from typing import Dict, List, Optional, Any, Union
+from typing import List, Optional
 import os
 import logging
 import yaml
 import secrets
-from pydantic import BaseModel, EmailStr, Field, validator, SecretStr, field_validator, ValidationError
+from pydantic import BaseModel, EmailStr, Field, field_validator, ValidationError
 from pydantic_settings import BaseSettings
-from pydantic_core import PydanticCustomError
 from functools import lru_cache
 from email_validator import validate_email, EmailNotValidError
-import re
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -98,6 +96,25 @@ class SecurityConfig(BaseModel):
         return v
 
 
+class HcaptchaConfig(BaseModel):
+    """
+    hCaptcha configuration settings.
+    """
+    enabled: bool = False
+    site_key: Optional[str] = None
+    secret_key: Optional[str] = None
+    api_url: str = "https://hcaptcha.com/siteverify"
+    timeout: int = 10
+    invisible: bool = False  # Always Challenge mode by default
+    
+    @field_validator('timeout')
+    @classmethod
+    def validate_timeout(cls, v: int) -> int:
+        if v < 1 or v > 30:
+            raise ValueError("hCaptcha timeout must be between 1 and 30 seconds")
+        return v
+
+
 class Config(BaseSettings):
     """
     Main application configuration.
@@ -107,6 +124,7 @@ class Config(BaseSettings):
     smtp: SMTPConfig
     security: SecurityConfig = Field(default_factory=lambda: SecurityConfig(jwt_secret=secrets.token_hex(32)))
     database: DatabaseConfig  # Required now
+    hcaptcha: HcaptchaConfig = Field(default_factory=HcaptchaConfig)
     use_db: bool = True  # Always use database
     log_level: str = "INFO"
     debug: bool = False
@@ -219,6 +237,17 @@ def load_config(config_path: Optional[str] = None) -> Config:
                 "use_tls": os.environ.get("SMTP_USE_TLS", "").lower() == "true",
                 "start_tls": os.environ.get("SMTP_START_TLS", "").lower() == "true",
                 "verify_cert": os.environ.get("SMTP_VERIFY_CERT", "true").lower() == "true",
+            }
+
+        # Handle hCaptcha configuration from environment variables
+        if "hcaptcha" not in config_data:
+            config_data["hcaptcha"] = {
+                "enabled": os.environ.get("HCAPTCHA_ENABLED", "false").lower() == "true",
+                "site_key": os.environ.get("HCAPTCHA_SITE_KEY"),
+                "secret_key": os.environ.get("HCAPTCHA_SECRET_KEY"),
+                "api_url": os.environ.get("HCAPTCHA_API_URL", "https://hcaptcha.com/siteverify"),
+                "timeout": int(os.environ.get("HCAPTCHA_TIMEOUT", "10")),
+                "invisible": os.environ.get("HCAPTCHA_INVISIBLE", "false").lower() == "true",
             }
 
         # Validate and create config

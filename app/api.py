@@ -18,8 +18,11 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.config import Config, get_config
 from app.email_sender import EmailSender
+import secrets
+from datetime import datetime, timedelta
+import asyncio
+from app.utils.ip_utils import get_real_ip, get_client_info
 from app.metrics import start_metrics_server
-from app.js_handler import JSHandler
 from app.database.connection import get_db
 from app.database.repository import FormRepository
 from app.form_controller import router as form_router
@@ -37,8 +40,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Initialize rate limiter
-limiter = Limiter(key_func=get_remote_address)
+# Initialize rate limiter with custom key function
+def get_real_ip_for_limiter(request: Request) -> str:
+    """Get real IP for rate limiting purposes."""
+    real_ip = get_real_ip(request)
+    return real_ip or "unknown"
+
+limiter = Limiter(key_func=get_real_ip_for_limiter)
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -59,8 +67,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # This will be overridden per-form
     allow_credentials=True,
-    allow_methods=["POST", "OPTIONS"],
-    allow_headers=["Content-Type", "Origin"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "Origin", "X-Requested-With", "X-Form-Origin", "Referer"],
 )
 
 # Add middleware for request timing and logging
@@ -68,14 +76,21 @@ app.add_middleware(
 async def add_process_time_header(request: Request, call_next):
     start_time = time.time()
     
+    # Get real IP for logging and rate limiting
+    real_ip = get_real_ip(request)
+    
+    # Add real IP to request state for use in endpoints
+    request.state.real_ip = real_ip
+    
     try:
         response = await call_next(request)
         process_time = time.time() - start_time
         response.headers["X-Process-Time"] = str(process_time)
         
-        # Log request details
+        # Log request details with real IP
         logger.info(
             f"Request: {request.method} {request.url.path} - "
+            f"Real IP: {real_ip} - "
             f"Status: {response.status_code} - "
             f"Time: {process_time:.4f}s"
         )
@@ -101,7 +116,6 @@ templates = Jinja2Templates(directory=templates_dir)
 
 # Global instances
 config = None
-js_handler = None
 
 
 def get_local_config():
@@ -112,12 +126,71 @@ def get_local_config():
     return config
 
 
-def get_js_handler():
-    """Dependency to get JS handler."""
-    global js_handler
-    if js_handler is None:
-        js_handler = JSHandler()
-    return js_handler
+# Background task for token cleanup
+async def cleanup_tokens_task():
+    """Background task to clean up expired tokens every hour."""
+    while True:
+        try:
+            # Wait 1 hour between cleanups
+            await asyncio.sleep(3600)
+            
+            # Get a database session
+            from app.database.connection import AsyncSessionLocal
+            if AsyncSessionLocal is not None:
+                async with AsyncSessionLocal() as db:
+                    from app.database.repository import FormTokenRepository
+                    
+                    # Clean up expired tokens
+                    expired_count = await FormTokenRepository.cleanup_expired_tokens(db)
+                    
+                    # Clean up used tokens older than 24 hours
+                    used_count = await FormTokenRepository.cleanup_used_tokens(db, older_than_hours=24)
+                    
+                    if expired_count > 0 or used_count > 0:
+                        logger.info(f"Token cleanup: removed {expired_count} expired and {used_count} old used tokens")
+                        
+        except Exception as e:
+            logger.error(f"Error in token cleanup task: {str(e)}")
+            # Continue running even if there's an error
+            continue
+
+
+# Background task for rate limiter cleanup
+async def cleanup_rate_limiter_task():
+    """Background task to clean up rate limiter memory every 5 minutes."""
+    while True:
+        try:
+            # Wait 5 minutes between cleanups
+            await asyncio.sleep(300)
+            
+            from app.rate_limiter import rate_limiter
+            rate_limiter.cleanup()
+            
+            logger.debug("Rate limiter cleanup completed")
+                        
+        except Exception as e:
+            logger.error(f"Error in rate limiter cleanup task: {str(e)}")
+            # Continue running even if there's an error
+            continue
+
+
+# Background task for security monitor cleanup
+async def cleanup_security_monitor_task():
+    """Background task to clean up security monitor every 10 minutes."""
+    while True:
+        try:
+            # Wait 10 minutes between cleanups
+            await asyncio.sleep(600)
+            
+            from app.security_monitor import security_monitor
+            security_monitor.cleanup()
+            
+            logger.debug("Security monitor cleanup completed")
+                        
+        except Exception as e:
+            logger.error(f"Error in security monitor cleanup task: {str(e)}")
+            # Continue running even if there's an error
+            continue
 
 
 # Custom OpenAPI and documentation endpoints
@@ -160,6 +233,19 @@ async def startup_event():
         # Start metrics server
         start_metrics_server(cfg.metrics_port)
         
+        # Start background token cleanup task
+        if cfg.use_db:
+            asyncio.create_task(cleanup_tokens_task())
+            logger.info("Started background token cleanup task")
+        
+        # Start background rate limiter cleanup task
+        asyncio.create_task(cleanup_rate_limiter_task())
+        logger.info("Started background rate limiter cleanup task")
+        
+        # Start background security monitor cleanup task
+        asyncio.create_task(cleanup_security_monitor_task())
+        logger.info("Started background security monitor cleanup task")
+        
         logger.info(f"MailBear started on port {cfg.port}")
         logger.info(f"Metrics available on port {cfg.metrics_port}")
     except Exception as e:
@@ -169,8 +255,21 @@ async def startup_event():
         raise
 
 
+@app.options("/api/v1/form/{form_id}")
+async def options_form_submit(form_id: str, request: Request):
+    """Handle preflight OPTIONS request for form submission endpoint."""
+    origin = request.headers.get("Origin", "*")
+    
+    response = Response(status_code=200)
+    response.headers["Access-Control-Allow-Origin"] = origin
+    response.headers["Access-Control-Allow-Credentials"] = "true"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Origin, X-Requested-With, X-Form-Origin, Referer"
+    response.headers["Access-Control-Max-Age"] = "86400"  # 24 hours
+    
+    return response
+
 @app.post("/api/v1/form/{form_id}", status_code=status.HTTP_200_OK)
-@limiter.limit(f"{get_local_config().security.rate_limit}/minute")
 async def submit_form(
     form_id: str,
     request: Request,
@@ -185,30 +284,132 @@ async def submit_form(
     
     If successful, the form data will be sent via email and stored.
     """
-    # Get origin header and other request information
+    # Check request size early to prevent large payload attacks
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            content_length = int(content_length)
+            max_size = 50 * 1024 * 1024  # 50MB max
+            if content_length > max_size:
+                logger.warning(f"Request too large from IP {get_real_ip(request)}: {content_length} bytes")
+                return JSONResponse(
+                    status_code=413,
+                    content={"status": "error", "message": "Request too large"}
+                )
+        except (ValueError, TypeError):
+            pass  # Invalid content-length header, let it proceed
+    
+    # Get origin header and real client information
     origin = request.headers.get("Origin")
-    ip_address = request.client.host if request.client else None
-    user_agent = request.headers.get("User-Agent")
+    referer = request.headers.get("Referer")
+    client_info = get_client_info(request)
+    ip_address = client_info["ip_address"]
+    user_agent = client_info["user_agent"]
+    
+    # Check if IP is blocked due to suspicious activity
+    from app.security_monitor import security_monitor
+    if security_monitor.is_ip_blocked(ip_address):
+        logger.warning(f"Blocked IP {ip_address} attempted form submission")
+        return JSONResponse(
+            status_code=403,
+            content={"status": "error", "message": "Access denied"}
+        )
+    
+    # Log Cloudflare detection for debugging
+    if client_info["is_cloudflare"]:
+        logger.info(f"Cloudflare request detected for form {form_id}. Real IP: {ip_address}, Proxy headers: {client_info['proxy_headers']}")
+    else:
+        logger.debug(f"Direct connection for form {form_id}. IP: {ip_address}")
+    
+    # Extract relevant headers for validation
+    request_headers = {
+        "X-Requested-With": request.headers.get("X-Requested-With", ""),
+        "X-Form-Origin": request.headers.get("X-Form-Origin", ""),
+    }
     
     try:
-        # Get form data
-        form_data = await request.form()
-        
-        # Use database form handler
+        # Use database form handler to get form config for rate limiting
         from app.database_form_handler import DatabaseFormHandler
         email_sender = EmailSender(config.smtp)
         db_form_handler = DatabaseFormHandler(db, email_sender)
         
-        submission = await db_form_handler.process_submission(
-            form_id=form_id,
-            form_data=dict(form_data),
-            origin=origin,
+        # Get form configuration for rate limiting
+        try:
+            form_config = await db_form_handler.get_form_config(form_id)
+        except HTTPException as e:
+            if e.status_code == 404:
+                return JSONResponse(status_code=404, content={"status": "error", "message": "Form not found"})
+            raise
+        
+        # Apply basic per-IP rate limiting before expensive operations to prevent DoS
+        from app.rate_limiter import rate_limiter
+        basic_ip_limit = min(form_config.get("rate_limit_per_ip_per_minute", 5) * 3, 50)  # 3x normal limit for basic checks
+        
+        basic_rate_allowed, basic_rate_reason = rate_limiter.is_allowed(
+            form_id=f"basic_{form_id}",  # Separate namespace for basic rate limiting
             ip_address=ip_address,
-            user_agent=user_agent
+            ip_limit=basic_ip_limit
         )
+        
+        if not basic_rate_allowed:
+            logger.warning(f"Basic rate limit exceeded for form {form_id} from IP {ip_address}: {basic_rate_reason}")
+            return JSONResponse(
+                status_code=429,
+                content={"status": "error", "message": "Too many requests"}
+            )
+        
+        # Parse form data with error handling for malformed requests
+        try:
+            form_data = await request.form()
+        except Exception as e:
+            logger.warning(f"Malformed form data from IP {ip_address} for form {form_id}: {str(e)}")
+            
+            # Record failed attempt for malformed data (potential attack)
+            security_monitor.record_failed_attempt(ip_address, "malformed_form_data")
+            
+            return JSONResponse(
+                status_code=400,
+                content={"status": "error", "message": "Invalid form data"}
+            )
+        
+        try:
+            submission = await db_form_handler.process_submission(
+                form_id=form_id,
+                form_data=dict(form_data),
+                origin=origin,
+                referer=referer,
+                ip_address=ip_address,
+                user_agent=user_agent,
+                request_headers=request_headers
+            )
+        except HTTPException as e:
+            # Record security violations
+            if e.status_code == 403:
+                error_detail = str(e.detail)
+                if any(keyword in error_detail.lower() for keyword in 
+                      ["origin", "referer", "javascript", "token", "not allowed"]):
+                    security_monitor.record_failed_attempt(ip_address, f"security_violation: {error_detail}")
+            raise
         
         # Return response
         if submission.success:
+            # Apply per-IP rate limiting only after successful submission
+            from app.rate_limiter import rate_limiter
+            ip_limit = form_config.get("rate_limit_per_ip_per_minute", 5)
+            
+            rate_allowed, rate_reason = rate_limiter.is_allowed(
+                form_id=form_id,
+                ip_address=ip_address,
+                ip_limit=ip_limit
+            )
+            
+            if not rate_allowed:
+                logger.warning(f"Rate limit exceeded for successful form {form_id} from IP {ip_address}: {rate_reason}")
+                return JSONResponse(
+                    status_code=429,
+                    content={"status": "error", "message": f"Rate limit exceeded: {rate_reason}"}
+                )
+            
             # Get success message or redirect URL if available
             success_message = "Form submitted successfully"
             redirect_url = None
@@ -248,6 +449,145 @@ async def submit_form(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={"status": "error", "message": "An error occurred processing your submission"}
         )
+
+
+@app.options("/api/v1/form/{form_id}/token")
+async def options_form_token(form_id: str, request: Request):
+    """Handle preflight OPTIONS request for token endpoint."""
+    origin = request.headers.get("Origin", "*")
+    
+    response = Response(status_code=200)
+    response.headers["Access-Control-Allow-Origin"] = origin
+    response.headers["Access-Control-Allow-Credentials"] = "true"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Origin, X-Requested-With, X-Form-Origin, Referer"
+    response.headers["Access-Control-Max-Age"] = "86400"  # 24 hours
+    
+    return response
+
+@app.get("/api/v1/form/{form_id}/token", status_code=status.HTTP_200_OK)
+async def get_form_token(
+    form_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    config: Config = Depends(get_config)
+):
+    """
+    Generate a time-limited token for form submission.
+    
+    This endpoint provides CSRF-like protection by generating tokens that must
+    be included with form submissions. Tokens expire after 15 minutes.
+    """
+    # Get origin and real client information for validation
+    origin = request.headers.get("Origin")
+    referer = request.headers.get("Referer")
+    client_info = get_client_info(request)
+    ip_address = client_info["ip_address"]
+    user_agent = client_info["user_agent"]
+    
+    # Log Cloudflare detection for token requests
+    if client_info["is_cloudflare"]:
+        logger.debug(f"Cloudflare token request for form {form_id}. Real IP: {ip_address}")
+    
+    try:
+        # Verify the form exists and get its configuration
+        from app.database_form_handler import DatabaseFormHandler
+        email_sender = EmailSender(config.smtp)
+        db_form_handler = DatabaseFormHandler(db, email_sender)
+        
+        try:
+            form_config = await db_form_handler.get_form_config(form_id)
+        except HTTPException as e:
+            if e.status_code == 404:
+                response = JSONResponse(status_code=404, content={"status": "error", "message": "Form not found"})
+                response.headers["Access-Control-Allow-Origin"] = origin or "*"
+                response.headers["Access-Control-Allow-Credentials"] = "true"
+                return response
+            raise
+        
+        # Apply rate limiting for token requests (separate from form submissions)
+        from app.rate_limiter import rate_limiter
+        ip_limit = form_config.get("rate_limit_per_ip_per_minute", 5)
+        
+        rate_allowed, rate_reason = rate_limiter.is_allowed(
+            form_id=f"token_{form_id}",  # Separate namespace for token requests
+            ip_address=ip_address,
+            ip_limit=ip_limit
+        )
+        
+        if not rate_allowed:
+            logger.warning(f"Rate limit exceeded for token request form {form_id} from IP {ip_address}: {rate_reason}")
+            response = JSONResponse(
+                status_code=429,
+                content={"status": "error", "message": f"Rate limit exceeded: {rate_reason}"}
+            )
+            response.headers["Access-Control-Allow-Origin"] = origin or "*"
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+            return response
+        
+        # Validate origin for token generation (same rules as submission)
+        allowed_domains = form_config["allowed_domains"]
+        if "*" not in allowed_domains:
+            origin_valid = origin and db_form_handler.validate_origin(origin, allowed_domains)
+            referer_valid = referer and db_form_handler.validate_referer(referer, allowed_domains)
+            
+            if not (origin_valid or referer_valid):
+                logger.warning(f"Invalid origin/referer for token request form {form_id}: origin={origin}, referer={referer}, allowed_domains={allowed_domains}")
+                response = JSONResponse(status_code=403, content={
+                    "status": "error", 
+                    "message": "Invalid origin or referer",
+                    "debug": {
+                        "origin": origin,
+                        "referer": referer,
+                        "allowed_domains": allowed_domains
+                    }
+                })
+                response.headers["Access-Control-Allow-Origin"] = origin or "*"
+                response.headers["Access-Control-Allow-Credentials"] = "true"
+                return response
+        
+        # Generate a cryptographically secure token
+        token = secrets.token_urlsafe(32)  # 256 bits of entropy
+        
+        # Set expiration time (15 minutes from now)
+        expires_at = datetime.now() + timedelta(minutes=15)
+        
+        # Store the token in the database
+        from app.database.repository import FormTokenRepository
+        await FormTokenRepository.create(
+            db=db,
+            form_id=form_id,
+            token=token,
+            expires_at=expires_at,
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
+        
+        # Clean up expired tokens periodically (1% chance)
+        if secrets.randbelow(100) == 0:
+            await FormTokenRepository.cleanup_expired_tokens(db)
+        
+        response = JSONResponse(content={
+            "status": "success",
+            "token": token,
+            "expires_at": expires_at.isoformat(),
+            "expires_in": 900  # 15 minutes in seconds
+        })
+        
+        # Add CORS headers for token response
+        response.headers["Access-Control-Allow-Origin"] = origin or "*"
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Origin, X-Requested-With, X-Form-Origin, Referer"
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error generating token for form {form_id}: {str(e)}")
+        response = JSONResponse(status_code=500, content={"status": "error", "message": "Internal server error"})
+        response.headers["Access-Control-Allow-Origin"] = origin or "*"
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        return response
 
 
 @app.get("/")
@@ -544,40 +884,7 @@ async def all_submissions(
                 "error_message": "An error occurred loading the submissions",
                 "status_code": 500
             },
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
-
-
-@app.get("/api/v1/form/{form_id}/js")
-async def get_form_js(
-    form_id: str,
-    request: Request,
-    js_handler: JSHandler = Depends(get_js_handler),
-    db: AsyncSession = Depends(get_db),
-    config: Config = Depends(get_config)
-):
-    """
-    Get JavaScript for a form.
-    
-    Returns a JavaScript file that handles form submission for the specified form.
-    The script includes validation, honeypot protection, and AJAX submission.
-    """
-    try:
-        # Get form from database
-        form = await FormRepository.get_by_id(db, form_id)
-        if not form:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Form not found")
-        
-        return await js_handler.get_form_script(form_id, request, form=form)
-    except HTTPException:
-        # Re-raise HTTP exceptions (e.g., 404 for not found)
-        raise
-    except Exception as e:
-        logger.error(f"Error generating form script for {form_id}: {str(e)}")
-        logger.error(traceback.format_exc())
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An error occurred generating the form script"
+            status_code=500
         )
 
 

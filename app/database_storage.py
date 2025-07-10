@@ -63,6 +63,7 @@ class DatabaseStorage(StorageInterface):
         # Convert DB submissions to FormSubmission objects
         return [
             FormSubmission(
+                id=sub.id,  # Include the database ID
                 form_id=sub.form_id,
                 data=sub.data,
                 created_at=sub.created_at,
